@@ -309,3 +309,16 @@ func NewEcsClient(accessKeyID, accessKeySecret, accessToken string) (ecsClient *
 	}
 	return
 }
+
+func GetPodIdFromMntPoint(mountPath string) string {
+	podId := ""
+	dirList := strings.Split(mountPath, "/var/lib/kubelet/pods/")
+	if len(dirList) > 1 {
+		suffixPart := dirList[1]
+		dirList := strings.Split(suffixPart, "/volumes/")
+		if len(dirList) > 0 {
+			podId = dirList[0]
+		}
+	}
+	return podId
+}

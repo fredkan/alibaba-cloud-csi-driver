@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 	"io/ioutil"
 	"net"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -40,12 +41,14 @@ type nodeServer struct {
 
 // Options contains options for target oss
 type Options struct {
-	Bucket    string `json:"bucket"`
-	URL       string `json:"url"`
-	OtherOpts string `json:"otherOpts"`
-	AkID      string `json:"akId"`
-	AkSecret  string `json:"akSecret"`
-	Path      string `json:"path"`
+	Bucket        string `json:"bucket"`
+	URL           string `json:"url"`
+	OtherOpts     string `json:"otherOpts"`
+	AkID          string `json:"akId"`
+	AkSecret      string `json:"akSecret"`
+	Path          string `json:"path"`
+	MemAccelerate bool   `json:"memAccelerate"`
+	MemSize       string `json:"memSize"`
 }
 
 const (
@@ -65,6 +68,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	// logout oss paras
 	mountPath := req.GetTargetPath()
 	opt := &Options{}
+	opt.MemAccelerate = false
+	opt.MemSize = "1g"
 	for key, value := range req.VolumeContext {
 		key = strings.ToLower(key)
 		if key == "bucket" {
@@ -79,6 +84,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			opt.AkSecret = value
 		} else if key == "path" {
 			opt.Path = value
+		} else if key == "memaccelerate" {
+			if value == "true" {
+				opt.MemAccelerate = true
+			}
+		} else if key == "memsize" {
+			opt.MemSize = value
 		}
 	}
 	if opt.Path == "" {
@@ -126,7 +137,24 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	// default use allow_other
-	mntCmd := fmt.Sprintf("systemd-run --scope -- /usr/local/bin/ossfs %s:%s %s -ourl=%s %s", opt.Bucket, opt.Path, mountPath, opt.URL, opt.OtherOpts)
+	useCache := ""
+	if opt.MemAccelerate == true {
+		log.Infof("Volume Set memAccelerate: %b , memSize: %s", opt.MemAccelerate, opt.MemSize)
+		podId := utils.GetPodIdFromMntPoint(mountPath)
+		memPath := filepath.Join("/host/usr/.tmpossfs", podId)
+		hostMemPath := filepath.Join("/usr/.tmpossfs", podId)
+		if err := utils.CreateDest(memPath); err == nil {
+			cmd := fmt.Sprintf("%s mount -t tmpfs -o size=%s tmpfs %s", NsenterCmd, opt.MemSize, hostMemPath)
+			if _, err := utils.Run(cmd); err == nil {
+				useCache = "-o use_cache=" + hostMemPath
+			} else {
+				log.Errorf("Mount: use_cache not available with: %s", err.Error())
+			}
+		} else {
+			log.Errorf("CreateDest: use_cache not available with: %s", err.Error())
+		}
+	}
+	mntCmd := fmt.Sprintf("systemd-run --scope -- /usr/local/bin/ossfs %s:%s %s -ourl=%s %s %s", opt.Bucket, opt.Path, mountPath, opt.URL, opt.OtherOpts, useCache)
 	if out, err := connectorRun(mntCmd); err != nil {
 		if err != nil {
 			log.Errorf("Ossfs mount error: %s", err.Error())
@@ -249,6 +277,14 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	if _, err := utils.Run(umntCmd); err != nil {
 		log.Errorf("Umount oss fail, with: %s", err.Error())
 		return nil, errors.New("Oss, Umount oss Fail: " + err.Error())
+	}
+
+	podId := utils.GetPodIdFromMntPoint(mountPoint)
+	hostMemPath := filepath.Join("/usr/.tmpossfs", podId)
+	memPath := filepath.Join("/host/usr/.tmpossfs", podId)
+	if utils.IsFileExisting(memPath) {
+		cmd := fmt.Sprintf("%s umount %s", NsenterCmd, hostMemPath)
+		utils.Run(cmd)
 	}
 
 	log.Infof("NodeUnpublishVolume:: Umount OSS Successful: %s", mountPoint)
