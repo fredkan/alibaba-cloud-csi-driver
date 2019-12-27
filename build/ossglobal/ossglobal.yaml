@@ -1,0 +1,59 @@
+kind: DaemonSet
+apiVersion: apps/v1beta2
+metadata:
+  name: oss-globalmount
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: oss-globalmount
+  template:
+    metadata:
+      labels:
+        app: oss-globalmount
+    spec:
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+      serviceAccount: admin
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: oss-globalmount
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["SYS_ADMIN"]
+          allowPrivilegeEscalation: true
+        image: registry.cn-hangzhou.aliyuncs.com/plugins/csi-ossglobal:v1.14.8-205af5704
+        imagePullPolicy: "Always"
+        env:
+        - name: OSS_BUCKET
+          value: "docker"
+        - name: AK_ID
+          value: ""
+        - name: AK_SEC
+          value: ""
+        - name: OSS_OPTIONS
+          value: "-o max_stat_cache_size=0 -o allow_other"
+        - name: MNTPATH
+          value: "/mnt/test"
+        volumeMounts:
+        - name: etc
+          mountPath: /host/etc
+        - name: usr
+          mountPath: /host/usr
+        - mountPath: /var/log/
+          name: host-log
+      volumes:
+      - name: etc
+        hostPath:
+          path: /etc
+      - name: usr
+        hostPath:
+          path: /usr
+      - name: host-log
+        hostPath:
+          path: /var/log/
+  updateStrategy:
+    type: RollingUpdate
