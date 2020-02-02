@@ -17,22 +17,44 @@ limitations under the License.
 package lvm
 
 import (
+	"errors"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/lvm/lvmd"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+	"time"
+)
+
+const (
+	connectTimeout = 3 * time.Second
 )
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
+	client kubernetes.Interface
 }
 
 // newControllerServer creates a controllerServer object
 func newControllerServer(d *csicommon.CSIDriver) *controllerServer {
+	cfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
+	if err != nil {
+		log.Fatalf("Error building kubeconfig: %s", err.Error())
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(cfg)
+
+	if err != nil {
+		log.Fatalf("Error building kubernetes clientset: %s", err.Error())
+	}
+
 	return &controllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
+		client:                  kubeClient,
 	}
 }
 
@@ -104,6 +126,34 @@ func pickNodeID(requirement *csi.TopologyRequirement) string {
 }
 
 func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	nodeName, vgName, err := getLvmSpec(cs.client, volumeID)
+	if err != nil {
+		return nil, err
+	}
+	if nodeName != "" {
+		addr, err := getLvmdAddr(cs.client, nodeName)
+		if err != nil {
+			return nil, err
+		}
+
+		conn, err := lvmd.NewLVMConnection(addr, connectTimeout)
+		defer conn.Close()
+		if err != nil {
+			log.Errorf("DeleteVolume: New lvm %s Connection error: %s", req.GetVolumeId(), err.Error())
+			return nil, err
+		}
+
+		if _, err := conn.GetLvm(ctx, vgName, volumeID); err == nil {
+			if err := conn.DeleteLvm(ctx, vgName, volumeID); err != nil {
+				log.Errorf("DeleteVolume: Remove lvm for %s with error: %s", req.GetVolumeId(), err.Error())
+				return nil, errors.New("Remove Lvm Failed: " + err.Error())
+			}
+		} else {
+			log.Errorf("DeleteVolume: Get lvm for %s with error: %s", req.GetVolumeId(), err.Error())
+		}
+	}
+
 	log.Infof("DeleteVolume: Successfully deleting volume: %s", req.GetVolumeId())
 	return &csi.DeleteVolumeResponse{}, nil
 }

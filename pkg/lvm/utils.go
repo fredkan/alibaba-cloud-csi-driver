@@ -19,7 +19,9 @@ package lvm
 import (
 	"errors"
 	"fmt"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/lvm/lvmd"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +33,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -234,4 +239,74 @@ func createVG(vgName string) (int, error) {
 
 	log.Infof("Successful add Local Disks to VG (%s): %v", vgName, localDeviceList)
 	return localDeviceNum, nil
+}
+
+func getLvmSpec(client kubernetes.Interface, volumeID string) (string, string, error) {
+	pv, err := getPvObj(client, volumeID)
+	if err != nil {
+		log.Errorf("Get Lvm Spec for volume %s, error with %v", volumeID, err)
+		return "", "", err
+	}
+	if pv.Spec.NodeAffinity == nil {
+		log.Errorf("Get Lvm Spec for volume %s, with nil nodeAffinity", volumeID)
+		return "", "", nil
+	}
+	if pv.Spec.NodeAffinity.Required == nil || len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) == 0 {
+		log.Errorf("Get Lvm Spec for volume %s, with nil Required", volumeID)
+		return "", "", nil
+	}
+	if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions) == 0 {
+		log.Errorf("Get Lvm Spec for volume %s, with nil MatchExpressions", volumeID)
+		return "", "", nil
+	}
+	key := pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Key
+	if key != "kubernetes.io/hostname" {
+		log.Errorf("Get Lvm Spec for volume %s, with key %s", volumeID, key)
+		return "", "", nil
+	}
+	nodes := pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values
+	if len(nodes) == 0 {
+		log.Errorf("Get Lvm Spec for volume %s, with empty nodes", volumeID)
+		return "", "", nil
+	}
+
+	if _, ok := pv.Spec.CSI.VolumeAttributes["vgName"]; !ok {
+		log.Errorf("Get Lvm Spec for volume %s, with empty vgName", volumeID)
+		return "", "", errors.New("vgName not exist for " + volumeID)
+	}
+
+	log.Infof("Get Lvm Spec for volume %s, with VgName %s, Node %s", volumeID, pv.Spec.CSI.VolumeAttributes["vgName"], nodes[0])
+	return nodes[0], pv.Spec.CSI.VolumeAttributes["vgName"], nil
+}
+
+func getPvObj(client kubernetes.Interface, volumeID string) (*v1.PersistentVolume, error) {
+	return client.CoreV1().PersistentVolumes().Get(volumeID, metav1.GetOptions{})
+}
+
+func getLvmdAddr(client kubernetes.Interface, node string) (string, error) {
+	ip, err := GetNodeIP(client, node)
+	if err != nil {
+		return "", err
+	}
+	return ip.String() + ":" + lvmd.GetLvmdPort(), nil
+}
+
+// GetNodeIP get node address
+func GetNodeIP(client kubernetes.Interface, nodeID string) (net.IP, error) {
+	node, err := client.CoreV1().Nodes().Get(nodeID, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	addresses := node.Status.Addresses
+	addressMap := make(map[v1.NodeAddressType][]v1.NodeAddress)
+	for i := range addresses {
+		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
+	}
+	if addresses, ok := addressMap[v1.NodeInternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	if addresses, ok := addressMap[v1.NodeExternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	return nil, fmt.Errorf("Node IP unknown; known addresses: %v", addresses)
 }
