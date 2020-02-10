@@ -1,0 +1,140 @@
+package lvmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"time"
+
+	lvmd "github.com/google/lvmd/proto"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+)
+
+// LVMConnection lvm connection interface
+type LVMConnection interface {
+	GetLvm(ctx context.Context, volGroup string, volumeID string) (string, error)
+	CreateLvm(ctx context.Context, opt *LVMOptions) (string, error)
+	DeleteLvm(ctx context.Context, volGroup string, volumeID string) error
+	Close() error
+}
+
+// LVMOptions lvm options
+type LVMOptions struct {
+	VolumeGroup string
+	Name        string
+	Size        uint64
+	Tags        []string
+}
+
+//
+type lvmdConnection struct {
+	conn *grpc.ClientConn
+}
+
+var (
+	_ LVMConnection = &lvmdConnection{}
+)
+
+// NewLVMConnection lvm connection
+func NewLVMConnection(address string, timeout time.Duration) (LVMConnection, error) {
+	conn, err := connect(address, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return &lvmdConnection{
+		conn: conn,
+	}, nil
+}
+
+func (c *lvmdConnection) Close() error {
+	return c.conn.Close()
+}
+
+func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
+	log.Infof("New LVM Connecting to %s", address)
+	dialOptions := []grpc.DialOption{
+		grpc.WithInsecure(),
+		grpc.WithBackoffMaxDelay(time.Second),
+		grpc.WithUnaryInterceptor(logGRPC),
+	}
+	if strings.HasPrefix(address, "/") {
+		dialOptions = append(dialOptions, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+			return net.DialTimeout("unix", addr, timeout)
+		}))
+	}
+	conn, err := grpc.Dial(address, dialOptions...)
+
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		if !conn.WaitForStateChange(ctx, conn.GetState()) {
+			log.Warnf("Connection to %s timed out", address)
+			return conn, nil // return nil, subsequent GetPluginInfo will show the real connection error
+		}
+		if conn.GetState() == connectivity.Ready {
+			log.Warnf("Connected to %s", address)
+			return conn, nil
+		}
+		log.Infof("Still trying to connect %s, connection is %s", address, conn.GetState())
+	}
+}
+
+func (c *lvmdConnection) CreateLvm(ctx context.Context, opt *LVMOptions) (string, error) {
+	client := lvmd.NewLVMClient(c.conn)
+	req := lvmd.CreateLVRequest{
+		VolumeGroup: opt.VolumeGroup,
+		Name:        opt.Name,
+		Size:        opt.Size,
+		Tags:        opt.Tags,
+	}
+
+	rsp, err := client.CreateLV(ctx, &req)
+	if err != nil {
+		return "", err
+	}
+	log.Infof("Create Lvm with result: %+v", rsp.CommandOutput)
+	return rsp.GetCommandOutput(), nil
+}
+
+func (c *lvmdConnection) GetLvm(ctx context.Context, volGroup string, volumeID string) (string, error) {
+	client := lvmd.NewLVMClient(c.conn)
+	req := lvmd.ListLVRequest{
+		VolumeGroup: fmt.Sprintf("%s/%s", volGroup, volumeID),
+	}
+
+	rsp, err := client.ListLV(ctx, &req)
+	if err != nil {
+		return "", err
+	}
+	if len(rsp.GetVolumes()) <= 0 {
+		msg := fmt.Sprintf("Volume %s/%s is not exist", volGroup, volumeID)
+		return "", errors.New(msg)
+	}
+	log.Infof("Get Lvm with result: %+v", rsp.Volumes)
+	return rsp.GetVolumes()[0].String(), nil
+}
+
+func (c *lvmdConnection) DeleteLvm(ctx context.Context, volGroup, volumeID string) error {
+	client := lvmd.NewLVMClient(c.conn)
+	req := lvmd.RemoveLVRequest{
+		VolumeGroup: volGroup,
+		Name:        volumeID,
+	}
+	response, err := client.RemoveLV(ctx, &req)
+	log.Infof("remove Lvm with result: %v", response.GetCommandOutput())
+	return err
+}
+
+func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	log.Infof("GRPC request: %s, %+v", method, req)
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	log.Infof("GRPC response: %+v, %v", reply, err)
+	return err
+}

@@ -30,6 +30,7 @@ import (
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/mem"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/nas"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/oss"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -54,6 +55,8 @@ const (
 	TypePluginLVM = "lvmplugin.csi.alibabacloud.com"
 	// TypePluginMEM memory type plugin
 	TypePluginMEM = "memplugin.csi.alibabacloud.com"
+	// TypePluginYODA memory type plugin
+	TypePluginYODA = "yodaplugin.csi.alibabacloud.com"
 )
 
 // BRANCH is CSI Driver Branch
@@ -112,6 +115,9 @@ func main() {
 		driver.Run()
 	} else if drivername == TypePluginMEM {
 		driver := mem.NewDriver(*nodeID, *endpoint)
+		driver.Run()
+	} else if drivername == TypePluginYODA {
+		driver := yoda.NewDriver(*nodeID, *endpoint)
 		driver.Run()
 	} else {
 		log.Errorf("CSI start failed, not support driver: %s", drivername)

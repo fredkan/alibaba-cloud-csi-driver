@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package lvm
+package yoda
 
 import (
 	"errors"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
-	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/lvm/lvmd"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils/lvmd"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"time"
-	"math/rand"
 )
 
 const (
@@ -74,23 +73,37 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	volumeID := req.GetName()
 	response := &csi.CreateVolumeResponse{}
 
-	// Get nodeID if pvc in topology mode.
-	nodeID := pickNodeID(req.GetAccessibilityRequirements())
-
-	if nodeID == "" {
-		response = &csi.CreateVolumeResponse{
-			Volume: &csi.Volume{
-				VolumeId:      volumeID,
-				CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
-				VolumeContext: req.GetParameters(),
-			},
+	parameters := req.GetParameters()
+	volumeType := LvmVolumeType
+	if value, ok := parameters["volumeType"]; ok {
+		volumeType = value
+	}
+	if volumeType != LvmVolumeType && volumeType != LocalVolumeType {
+		return nil, status.Error(codes.InvalidArgument, "Yoda only support localVolume/lvm type")
+	}
+	if volumeType == LvmVolumeType {
+		vgName := ""
+		vgAppend := true
+		if value, ok := parameters["vgName"]; ok {
+			volumeType = value
+			vgAppend = false
 		}
-	} else {
+
+		// Get nodeID if pvc in topology mode.
+		nodeID := pickNodeID(req.GetAccessibilityRequirements())
+		// Todo:
+		nodeID, vgName = GetLvmNodeAndVgName(nodeID, vgName)
+
+		volContext := req.GetParameters()
+		if vgAppend {
+			volContext["vgName"] = vgName
+		}
+
 		response = &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
 				VolumeId:      volumeID,
 				CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
-				VolumeContext: req.GetParameters(),
+				VolumeContext: volContext,
 				AccessibleTopology: []*csi.Topology{
 					{
 						Segments: map[string]string{
@@ -100,10 +113,23 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 				},
 			},
 		}
+		// Todo: spec local volume type
+	} else if volumeType == LocalVolumeType {
+
 	}
 
 	log.Infof("Success create Volume: %s, Size: %d", volumeID, req.GetCapacityRange().GetRequiredBytes())
 	return response, nil
+}
+
+func GetLvmNodeAndVgName(nodeId, vgName string) (string, string) {
+	if nodeId == "" {
+
+	}
+	if vgName == "" {
+
+	}
+	return nodeId, vgName
 }
 
 // pickNodeID selects node given topology requirement.
@@ -119,10 +145,11 @@ func pickNodeID(requirement *csi.TopologyRequirement) string {
 			nodeList = append(nodeList, nodeID)
 		}
 	}
-	if len(nodeList) > 0 {
-		rand.Seed(time.Now().UnixNano())
-		randon := rand.Intn(len(nodeList))
-		return nodeList[randon]
+	if len(nodeList) == 1 {
+		return nodeList[0]
+	}
+	if len(nodeList) > 1 {
+		return ""
 	}
 	for _, topology := range requirement.GetRequisite() {
 		nodeID, exists := topology.GetSegments()[TopologyNodeKey]
@@ -130,41 +157,58 @@ func pickNodeID(requirement *csi.TopologyRequirement) string {
 			nodeList = append(nodeList, nodeID)
 		}
 	}
-	if len(nodeList) > 0 {
-		rand.Seed(time.Now().UnixNano())
-		randon := rand.Intn(len(nodeList))
-		return nodeList[randon]
+	if len(nodeList) != 1 {
+		return ""
 	}
-	return ""
+	return nodeList[0]
 }
 
 func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	nodeName, vgName, err := getLvmSpec(cs.client, volumeID)
+	pvObj, err := getPvObj(cs.client, volumeID)
 	if err != nil {
 		return nil, err
 	}
-	if nodeName != "" {
-		addr, err := getLvmdAddr(cs.client, nodeName)
+	if pvObj.Spec.CSI == nil {
+		return nil, errors.New("Remove Lvm Failed: volume is not csi type: " + volumeID)
+	}
+	volumeType := ""
+	if value, ok := pvObj.Spec.CSI.VolumeAttributes["volumeType"]; ok {
+		volumeType = value
+	}
+
+	if volumeType == LvmVolumeType {
+		nodeName, vgName, err := getLvmSpec(cs.client, volumeID)
 		if err != nil {
 			return nil, err
 		}
-
-		conn, err := lvmd.NewLVMConnection(addr, connectTimeout)
-		defer conn.Close()
-		if err != nil {
-			log.Errorf("DeleteVolume: New lvm %s Connection error: %s", req.GetVolumeId(), err.Error())
-			return nil, err
-		}
-
-		if _, err := conn.GetLvm(ctx, vgName, volumeID); err == nil {
-			if err := conn.DeleteLvm(ctx, vgName, volumeID); err != nil {
-				log.Errorf("DeleteVolume: Remove lvm for %s with error: %s", req.GetVolumeId(), err.Error())
-				return nil, errors.New("Remove Lvm Failed: " + err.Error())
+		if nodeName != "" {
+			addr, err := getLvmdAddr(cs.client, nodeName)
+			if err != nil {
+				return nil, err
 			}
-		} else {
-			log.Errorf("DeleteVolume: Get lvm for %s with error: %s", req.GetVolumeId(), err.Error())
+
+			conn, err := lvmd.NewLVMConnection(addr, connectTimeout)
+			defer conn.Close()
+			if err != nil {
+				log.Errorf("DeleteVolume: New lvm %s Connection error: %s", req.GetVolumeId(), err.Error())
+				return nil, err
+			}
+
+			if _, err := conn.GetLvm(ctx, vgName, volumeID); err == nil {
+				if err := conn.DeleteLvm(ctx, vgName, volumeID); err != nil {
+					log.Errorf("DeleteVolume: Remove lvm for %s with error: %s", req.GetVolumeId(), err.Error())
+					return nil, errors.New("Remove Lvm Failed: " + err.Error())
+				}
+			} else {
+				log.Errorf("DeleteVolume: Get lvm for %s with error: %s", req.GetVolumeId(), err.Error())
+				return nil, err
+			}
 		}
+	} else if volumeType == LocalVolumeType {
+
+	} else {
+
 	}
 
 	log.Infof("DeleteVolume: Successfully deleting volume: %s", req.GetVolumeId())
