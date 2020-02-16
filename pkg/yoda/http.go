@@ -18,6 +18,7 @@ package yoda
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
@@ -84,6 +85,10 @@ func DoRequest(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		msg := fmt.Sprintf("Get Response StatusCode %d, Response: %++v", resp.StatusCode, resp)
+		return nil, errors.New(msg)
+	}
 	//
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
