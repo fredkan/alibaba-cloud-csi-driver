@@ -32,11 +32,22 @@ import (
 
 const (
 	connectTimeout = 3 * time.Second
+	PV_NAME_TAG    = "csi.storage.k8s.io/pv/name"
+	PVC_NAME_TAG   = "csi.storage.k8s.io/pvc/name"
+	PVC_NS_TAG     = "csi.storage.k8s.io/pvc/namespace"
 )
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
 	client kubernetes.Interface
+}
+
+type VolumeInfo struct {
+	VolumeType string
+	NodeID     string
+	VgName     string
+	MntPoint   string
+	Device     string
 }
 
 // newControllerServer creates a controllerServer object
@@ -60,7 +71,7 @@ func newControllerServer(d *csicommon.CSIDriver) *controllerServer {
 
 func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if err := cs.Driver.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
-		log.Infof("invalid create volume req: %v", req)
+		log.Errorf("CreateVolume: invalid create volume req: %v", req)
 		return nil, err
 	}
 	if len(req.Name) == 0 {
@@ -69,67 +80,88 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	if req.VolumeCapabilities == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities cannot be empty")
 	}
+	log.Infof("CreateVolume: starting to create volume with: %v", req)
 
+	// Define variable
+	pvcName, pvcNameSpace, volumeType := "", "", ""
 	volumeID := req.GetName()
-	response := &csi.CreateVolumeResponse{}
-
 	parameters := req.GetParameters()
-	volumeType := LvmVolumeType
+
+	// check volume type, only support localVolume/lvm/device
 	if value, ok := parameters["volumeType"]; ok {
 		volumeType = value
 	}
-	if volumeType != LvmVolumeType && volumeType != LocalVolumeType {
-		return nil, status.Error(codes.InvalidArgument, "Yoda only support localVolume/lvm type")
+	if volumeType != LvmVolumeType && volumeType != LocalVolumeType && volumeType != DeviceVolumeType {
+		log.Errorf("CreateVolume: Create volume with error volumeType %v", parameters)
+		return nil, status.Error(codes.InvalidArgument, "Yoda only support localVolume/lvm/device volume type")
 	}
+
+	// check pvc info
+	if value, ok := parameters[PVC_NAME_TAG]; ok {
+		pvcName = value
+	}
+	if value, ok := parameters[PVC_NS_TAG]; ok {
+		pvcNameSpace = value
+	}
+	if pvcName == "" || pvcNameSpace == "" {
+		log.Errorf("CreateVolume: Create Volume with error pvc info %v", parameters)
+		return nil, status.Error(codes.InvalidArgument, "Create LocalVolume with empty pvc info")
+	}
+	nodeID := pickNodeID(req.GetAccessibilityRequirements())
+
+	// Schedule lvm volume Info
 	if volumeType == LvmVolumeType {
 		vgName := ""
-		vgAppend := true
 		if value, ok := parameters["vgName"]; ok {
 			volumeType = value
-			vgAppend = false
 		}
-
-		// Get nodeID if pvc in topology mode.
-		nodeID := pickNodeID(req.GetAccessibilityRequirements())
-		// Todo:
-		nodeID, vgName = GetLvmNodeAndVgName(nodeID, vgName)
-
-		volContext := req.GetParameters()
-		if vgAppend {
-			volContext["vgName"] = vgName
+		if vgName == "" || nodeID == "" {
+			volumeInfo, err := ScheduleVolume(LvmVolumeType, pvcName, pvcNameSpace, nodeID)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, "lvm schedule with error "+err.Error())
+			}
+			vgName = volumeInfo.VgName
+			nodeID = volumeInfo.NodeID
 		}
+		parameters["vgName"] = vgName
 
-		response = &csi.CreateVolumeResponse{
-			Volume: &csi.Volume{
-				VolumeId:      volumeID,
-				CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
-				VolumeContext: volContext,
-				AccessibleTopology: []*csi.Topology{
-					{
-						Segments: map[string]string{
-							TopologyNodeKey: nodeID,
-						},
+	} else if volumeType == LocalVolumeType {
+		volumeInfo, err := ScheduleVolume(LocalVolumeType, pvcName, pvcNameSpace, nodeID)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "local volume schedule with error "+err.Error())
+		}
+		parameters["localVolume"] = volumeInfo.MntPoint
+
+	} else if volumeType == DeviceVolumeType {
+		volumeInfo, err := ScheduleVolume(DeviceVolumeType, pvcName, pvcNameSpace, nodeID)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "device schedule with error "+err.Error())
+		}
+		parameters["device"] = volumeInfo.Device
+
+	} else {
+		log.Errorf("CreateVolume: Create with no support type %s", volumeType)
+		return nil, status.Error(codes.InvalidArgument, "Create with no support type "+volumeType)
+	}
+
+	// Struct Volume Response
+	response := &csi.CreateVolumeResponse{
+		Volume: &csi.Volume{
+			VolumeId:      volumeID,
+			CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
+			VolumeContext: parameters,
+			AccessibleTopology: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						TopologyNodeKey: nodeID,
 					},
 				},
 			},
-		}
-		// Todo: spec local volume type
-	} else if volumeType == LocalVolumeType {
-
+		},
 	}
 
 	log.Infof("Success create Volume: %s, Size: %d", volumeID, req.GetCapacityRange().GetRequiredBytes())
 	return response, nil
-}
-
-func GetLvmNodeAndVgName(nodeId, vgName string) (string, string) {
-	if nodeId == "" {
-
-	}
-	if vgName == "" {
-
-	}
-	return nodeId, vgName
 }
 
 // pickNodeID selects node given topology requirement.
@@ -187,7 +219,6 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 			if err != nil {
 				return nil, err
 			}
-
 			conn, err := lvmd.NewLVMConnection(addr, connectTimeout)
 			defer conn.Close()
 			if err != nil {
@@ -206,12 +237,12 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 			}
 		}
 	} else if volumeType == LocalVolumeType {
-
-	} else {
-
+		log.Infof("DeleteVolume: default to delete local volume type volume...")
+	} else if volumeType == DeviceVolumeType {
+		log.Infof("DeleteVolume: default to delete device volume type volume...")
 	}
 
-	log.Infof("DeleteVolume: Successfully deleting volume: %s", req.GetVolumeId())
+	log.Infof("DeleteVolume: Successfully deleting volume: %s as type: %s", req.GetVolumeId(), volumeType)
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
