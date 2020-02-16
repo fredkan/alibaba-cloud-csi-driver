@@ -45,11 +45,11 @@ const (
 	// NodeAffinity is the pv node schedule tag
 	NodeAffinity = "nodeAffinity"
 	// LocalDisk local disk
-	LvmVolumeType = "lvm"
+	LvmVolumeType = "LVM"
 	// CloudDisk cloud disk
-	LocalVolumeType = "localVolume"
+	LocalVolumeType = "LocalVolume"
 	// DeviceVolumeType cloud disk
-	DeviceVolumeType = "device"
+	DeviceVolumeType = "Device"
 	// LinearType linear type
 	LinearType = "linear"
 	// StripingType striping type

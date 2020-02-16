@@ -1,3 +1,19 @@
+/*
+Copyright 2020 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package yoda
 
 import (
@@ -18,6 +34,9 @@ import (
 )
 
 func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRequest) error {
+	targetPath := req.TargetPath
+
+	// parse vgname, consider invalid if empty
 	vgName := ""
 	if _, ok := req.VolumeContext[VgNameTag]; ok {
 		vgName = req.VolumeContext[VgNameTag]
@@ -26,7 +45,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 		return status.Error(codes.Internal, "error with input vgName is empty")
 	}
 
-	targetPath := req.TargetPath
+	// parse lvm type and fstype
 	lvmType := LinearType
 	if _, ok := req.VolumeContext[LvmTypeTag]; ok {
 		lvmType = req.VolumeContext[LvmTypeTag]
@@ -35,6 +54,8 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 	if _, ok := req.VolumeContext[FsTypeTag]; ok {
 		fsType = req.VolumeContext[FsTypeTag]
 	}
+
+	// Create LVM if not exist
 	volumeNewCreated := false
 	volumeID := req.GetVolumeId()
 	devicePath := filepath.Join("/dev/", vgName, volumeID)
@@ -46,6 +67,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 		}
 	}
 
+	// Check target mounted
 	isMnt, err := ns.mounter.IsMounted(targetPath)
 	if err != nil {
 		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
@@ -55,17 +77,6 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 			isMnt = false
 		} else {
 			return status.Error(codes.Internal, err.Error())
-		}
-	}
-
-	exitFSType, err := checkFSType(devicePath)
-	if err != nil {
-		return status.Errorf(codes.Internal, "check fs type err: %v", err)
-	}
-	if exitFSType == "" {
-		log.Printf("The device %v has no filesystem, starting format: %v", devicePath, fsType)
-		if err := formatDevice(devicePath, fsType); err != nil {
-			return status.Errorf(codes.Internal, "format fstype failed: err=%v", err)
 		}
 	}
 
@@ -79,8 +90,9 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 		mountFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
 		options = append(options, mountFlags...)
 
-		err = ns.mounter.Mount(devicePath, targetPath, fsType, options...)
-		if err != nil {
+		diskMounter := &k8smount.SafeFormatAndMount{Interface: ns.k8smounter, Exec: k8smount.NewOsExec()}
+		if err := diskMounter.FormatAndMount(devicePath, targetPath, fsType, options); err != nil {
+			log.Errorf("NodeStageVolume: Volume: %s, Device: %s, FormatAndMount error: %s", req.VolumeId, devicePath, err.Error())
 			return status.Error(codes.Internal, err.Error())
 		}
 		log.Infof("NodePublishVolume:: mount successful devicePath: %s, targetPath: %s, options: %v", devicePath, targetPath, options)
@@ -98,7 +110,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 func (ns *nodeServer) mountLocalVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) error {
 	sourcePath := ""
 	targetPath := req.TargetPath
-	if value, ok := req.VolumeContext["localVolume"]; ok {
+	if value, ok := req.VolumeContext[LocalVolumeType]; ok {
 		sourcePath = value
 	}
 	if sourcePath == "" {
@@ -134,7 +146,7 @@ func (ns *nodeServer) mountLocalVolume(ctx context.Context, req *csi.NodePublish
 func (ns *nodeServer) mountDeviceVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) error {
 	sourceDevice := ""
 	targetPath := req.TargetPath
-	if value, ok := req.VolumeContext["device"]; ok {
+	if value, ok := req.VolumeContext[DeviceVolumeType]; ok {
 		sourceDevice = value
 	}
 	if sourceDevice == "" {

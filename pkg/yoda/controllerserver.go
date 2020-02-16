@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2020 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,12 +42,21 @@ type controllerServer struct {
 	client kubernetes.Interface
 }
 
-type VolumeInfo struct {
-	VolumeType string
-	NodeID     string
-	VgName     string
-	MntPoint   string
-	Device     string
+// BindingInfo represents the pvc and disk/lvm mapping
+type BindingInfo struct {
+	// node is the name of selected node
+	Node string `json:"node"`
+	// path for mount point
+	Disk string `json:"disk"`
+	// VgName is the name of selected volume group
+	VgName string `json:"vgName"`
+	// Device is the name for raw block device: /dev/vdb
+	Device string `json:"device"`
+	// [lvm] or [disk] or [device] or [quota]
+	VolumeType string `json:"volumeType"`
+
+	// PersistentVolumeClaim is the metakey for pvc: {namespace}/{name}
+	PersistentVolumeClaim string `json:"persistentVolumeClaim"`
 }
 
 // newControllerServer creates a controllerServer object
@@ -56,9 +65,7 @@ func newControllerServer(d *csicommon.CSIDriver) *controllerServer {
 	if err != nil {
 		log.Fatalf("Error building kubeconfig: %s", err.Error())
 	}
-
 	kubeClient, err := kubernetes.NewForConfig(cfg)
-
 	if err != nil {
 		log.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
@@ -120,8 +127,12 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, "lvm schedule with error "+err.Error())
 			}
+			if volumeInfo.VgName == "" || volumeInfo.Node == "" {
+				log.Errorf("Lvm Schedule finished, but get empty: %v", volumeInfo)
+				return nil, status.Error(codes.InvalidArgument, "lvm schedule finish but vgName/Node empty")
+			}
 			vgName = volumeInfo.VgName
-			nodeID = volumeInfo.NodeID
+			nodeID = volumeInfo.Node
 		}
 		parameters["vgName"] = vgName
 
@@ -130,21 +141,29 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, "local volume schedule with error "+err.Error())
 		}
-		parameters["localVolume"] = volumeInfo.MntPoint
+		parameters[LocalVolumeType] = volumeInfo.Disk
+		if volumeInfo.Disk == "" {
+			log.Errorf("LocalVolume Schedule finished, but get empty Disk: %v", volumeInfo)
+			return nil, status.Error(codes.InvalidArgument, "lvm schedule finish but Disk empty")
+		}
 
 	} else if volumeType == DeviceVolumeType {
 		volumeInfo, err := ScheduleVolume(DeviceVolumeType, pvcName, pvcNameSpace, nodeID)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, "device schedule with error "+err.Error())
 		}
-		parameters["device"] = volumeInfo.Device
+		parameters[DeviceVolumeType] = volumeInfo.Device
+		if volumeInfo.Device == "" {
+			log.Errorf("Device Schedule finished, but get empty Device: %v", volumeInfo)
+			return nil, status.Error(codes.InvalidArgument, "lvm schedule finish but Device empty")
+		}
 
 	} else {
 		log.Errorf("CreateVolume: Create with no support type %s", volumeType)
 		return nil, status.Error(codes.InvalidArgument, "Create with no support type "+volumeType)
 	}
 
-	// Struct Volume Response
+	log.Infof("Schedule %s Successful with %v", volumeType, parameters)
 	response := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeID,
