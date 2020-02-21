@@ -90,15 +90,14 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	log.Infof("CreateVolume: starting to create volume with: %v", req)
 
 	// Define variable
+	// check volumeType, only support MountPoint/LVM/Device
 	pvcName, pvcNameSpace, volumeType := "", "", ""
 	volumeID := req.GetName()
 	parameters := req.GetParameters()
-
-	// check volume type, only support localVolume/lvm/device
 	if value, ok := parameters["volumeType"]; ok {
 		volumeType = value
 	}
-	if volumeType != LvmVolumeType && volumeType != LocalVolumeType && volumeType != DeviceVolumeType {
+	if volumeType != LvmVolumeType && volumeType != MountPointType && volumeType != DeviceVolumeType {
 		log.Errorf("CreateVolume: Create volume with error volumeType %v", parameters)
 		return nil, status.Error(codes.InvalidArgument, "Yoda only support localVolume/lvm/device volume type")
 	}
@@ -120,10 +119,10 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	if volumeType == LvmVolumeType {
 		vgName := ""
 		if value, ok := parameters["vgName"]; ok {
-			volumeType = value
+			vgName = value
 		}
 		if vgName == "" || nodeID == "" {
-			volumeInfo, err := ScheduleVolume(LvmVolumeType, pvcName, pvcNameSpace, nodeID)
+			volumeInfo, err := ScheduleVolume(LvmVolumeType, pvcName, pvcNameSpace, vgName, nodeID)
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, "lvm schedule with error "+err.Error())
 			}
@@ -136,34 +135,33 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		}
 		parameters["vgName"] = vgName
 
-	} else if volumeType == LocalVolumeType {
-		volumeInfo, err := ScheduleVolume(LocalVolumeType, pvcName, pvcNameSpace, nodeID)
+	} else if volumeType == MountPointType {
+		volumeInfo, err := ScheduleVolume(MountPointType, pvcName, pvcNameSpace, "", nodeID)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, "local volume schedule with error "+err.Error())
 		}
-		parameters[LocalVolumeType] = volumeInfo.Disk
 		if volumeInfo.Disk == "" {
 			log.Errorf("LocalVolume Schedule finished, but get empty Disk: %v", volumeInfo)
 			return nil, status.Error(codes.InvalidArgument, "lvm schedule finish but Disk empty")
 		}
+		parameters[MountPointType] = volumeInfo.Disk
 
 	} else if volumeType == DeviceVolumeType {
-		volumeInfo, err := ScheduleVolume(DeviceVolumeType, pvcName, pvcNameSpace, nodeID)
+		volumeInfo, err := ScheduleVolume(DeviceVolumeType, pvcName, pvcNameSpace, "", nodeID)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, "device schedule with error "+err.Error())
 		}
-		parameters[DeviceVolumeType] = volumeInfo.Device
 		if volumeInfo.Device == "" {
 			log.Errorf("Device Schedule finished, but get empty Device: %v", volumeInfo)
 			return nil, status.Error(codes.InvalidArgument, "lvm schedule finish but Device empty")
 		}
+		parameters[DeviceVolumeType] = volumeInfo.Device
 
 	} else {
 		log.Errorf("CreateVolume: Create with no support type %s", volumeType)
 		return nil, status.Error(codes.InvalidArgument, "Create with no support type "+volumeType)
 	}
 
-	log.Infof("Schedule %s Successful with %v", volumeType, parameters)
 	response := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeID,
@@ -179,7 +177,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		},
 	}
 
-	log.Infof("Success create Volume: %s, Size: %d", volumeID, req.GetCapacityRange().GetRequiredBytes())
+	log.Infof("Success create Volume: %s, NodeId: %s, Options: %v, Size: %d", volumeID, nodeID, parameters, req.GetCapacityRange().GetRequiredBytes())
 	return response, nil
 }
 
@@ -255,10 +253,10 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 				return nil, err
 			}
 		}
-	} else if volumeType == LocalVolumeType {
-		log.Infof("DeleteVolume: default to delete local volume type volume...")
+	} else if volumeType == MountPointType {
+		log.Infof("DeleteVolume: default to delete MountPoint volume type volume...")
 	} else if volumeType == DeviceVolumeType {
-		log.Infof("DeleteVolume: default to delete device volume type volume...")
+		log.Infof("DeleteVolume: default to delete Device volume type volume...")
 	}
 
 	log.Infof("DeleteVolume: Successfully deleting volume: %s as type: %s", req.GetVolumeId(), volumeType)

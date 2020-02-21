@@ -47,7 +47,7 @@ const (
 	// LocalDisk local disk
 	LvmVolumeType = "LVM"
 	// CloudDisk cloud disk
-	LocalVolumeType = "LocalVolume"
+	MountPointType = "MountPoint"
 	// DeviceVolumeType cloud disk
 	DeviceVolumeType = "Device"
 	// LinearType linear type
@@ -90,7 +90,6 @@ func NewNodeServer(d *csicommon.CSIDriver, nodeID string) csi.NodeServer {
 	}
 
 	go lvmd.Start()
-
 	return &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
 		nodeID:            nodeID,
@@ -122,7 +121,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if err != nil {
 			return nil, err
 		}
-	} else if volumeType == LocalVolumeType {
+	} else if volumeType == MountPointType {
 		err := ns.mountLocalVolume(ctx, req)
 		if err != nil {
 			return nil, err

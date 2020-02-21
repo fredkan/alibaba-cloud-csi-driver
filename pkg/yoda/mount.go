@@ -110,7 +110,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 func (ns *nodeServer) mountLocalVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) error {
 	sourcePath := ""
 	targetPath := req.TargetPath
-	if value, ok := req.VolumeContext[LocalVolumeType]; ok {
+	if value, ok := req.VolumeContext[MountPointType]; ok {
 		sourcePath = value
 	}
 	if sourcePath == "" {

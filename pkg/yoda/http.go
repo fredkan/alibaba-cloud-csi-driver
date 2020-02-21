@@ -37,7 +37,7 @@ const (
 )
 
 // make request and get expect schedule topology
-func ScheduleVolume(volumeType, pvcName, pvcNamespace, nodeId string) (*BindingInfo, error) {
+func ScheduleVolume(volumeType, pvcName, pvcNamespace, vgName, nodeId string) (*BindingInfo, error) {
 	bindingInfo := &BindingInfo{}
 	hostEnv := os.Getenv(SCHEDULER_HOST_TAG)
 	if hostEnv != "" {
@@ -45,8 +45,12 @@ func ScheduleVolume(volumeType, pvcName, pvcNamespace, nodeId string) (*BindingI
 	}
 
 	// make request url
-	urlPath := fmt.Sprintf("/apis/scheduling/%s/persistentvolumeclaims/%s?nodeName=%s&volumeType=%s", pvcNamespace, pvcName, nodeId, volumeType)
-	if nodeId == "" {
+	urlPath := fmt.Sprintf("/apis/scheduling/%s/persistentvolumeclaims/%s?nodeName=%s&volumeType=%s&vgName=%s", pvcNamespace, pvcName, nodeId, volumeType, vgName)
+	if nodeId == "" && vgName != "" {
+		urlPath = fmt.Sprintf("/apis/scheduling/%s/persistentvolumeclaims/%s?volumeType=%s&vgName=%s", pvcNamespace, pvcName, volumeType, vgName)
+	} else if nodeId != "" && vgName == "" {
+		urlPath = fmt.Sprintf("/apis/scheduling/%s/persistentvolumeclaims/%s?volumeType=%s&nodeName=%s", pvcNamespace, pvcName, volumeType, nodeId)
+	} else if nodeId == "" && vgName == "" {
 		urlPath = fmt.Sprintf("/apis/scheduling/%s/persistentvolumeclaims/%s?volumeType=%s", pvcNamespace, pvcName, volumeType)
 	}
 	url := UrlHost + urlPath
