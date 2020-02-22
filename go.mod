@@ -3,74 +3,38 @@ module github.com/kubernetes-sigs/alibaba-cloud-csi-driver
 go 1.12
 
 require (
-	github.com/DataDog/zstd v1.3.4
-	github.com/Shopify/sarama v1.20.0
 	github.com/aliyun/alibaba-cloud-sdk-go v0.0.0-20191010082856-e76f4c50e182
-	github.com/apache/thrift v0.0.0-20181217171848-56ac72e74ae3
-	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 	github.com/container-storage-interface/spec v1.1.0
-	github.com/davecgh/go-spew v1.1.1
-	github.com/eapache/go-resiliency v1.1.0
-	github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21
-	github.com/eapache/queue v1.1.0
-	github.com/go-logfmt/logfmt v0.4.0
-	github.com/gogo/protobuf v1.2.1
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/protobuf v1.3.2
-	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
-	github.com/google/credstore v0.0.0-20181218150457-e184c60ef875
 	github.com/google/go-microservice-helpers v0.0.0-20190205165657-a91942da5417
-	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf
+	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/google/lvmd v0.0.0-20190916151813-e6e28ff087f6
-	github.com/googleapis/gnostic v0.2.0
-	github.com/grpc-ecosystem/go-grpc-middleware v1.0.0
-	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645
-	github.com/imdario/mergo v0.3.7
-	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
-	github.com/json-iterator/go v1.1.5
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
-	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
-	github.com/kubernetes-csi/csi-lib-utils v0.6.1
+	github.com/googleapis/gnostic v0.2.0 // indirect
+	github.com/imdario/mergo v0.3.7 // indirect
+	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
+	github.com/kubernetes-csi/csi-lib-utils v0.6.1 // indirect
 	github.com/kubernetes-csi/drivers v1.0.2
-	github.com/matttproud/golang_protobuf_extensions v1.0.1
-	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
-	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742
 	github.com/nightlyone/lockfile v0.0.0-20180618180623-0ad87eef1443
-	github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492
 	github.com/opentracing/opentracing-go v1.1.0
-	github.com/openzipkin/zipkin-go-opentracing v0.3.4
-	github.com/pierrec/lz4 v2.0.5+incompatible
-	github.com/prometheus/client_golang v0.9.2
-	github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
-	github.com/prometheus/common v0.0.0-20181126121408-4724e9255275
-	github.com/prometheus/procfs v0.0.0-20181204211112-1dc9a6cbc91a
-	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a
 	github.com/sevlyar/go-daemon v0.1.5
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.2 // indirect
-	github.com/spf13/pflag v1.0.3
+	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/wavezhang/k8s-csi-lvm v0.0.0-20190624122943-a64133d1baed
-	golang.org/x/crypto v0.0.0-20190228161510-8dd112bcdc25
+	golang.org/x/crypto v0.0.0-20190228161510-8dd112bcdc25 // indirect
 	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2
-	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
-	golang.org/x/sys v0.0.0-20190913121621-c3b328c6e5a7
-	golang.org/x/text v0.3.2
-	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	google.golang.org/appengine v1.4.0
+	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a // indirect
 	google.golang.org/grpc v1.23.1
-	gopkg.in/inf.v0 v0.9.1
-	gopkg.in/ini.v1 v1.42.0
-	gopkg.in/square/go-jose.v2 v2.2.1
-	gopkg.in/yaml.v2 v2.2.2
+	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20190624085159-95846d7ef82a
 	k8s.io/apimachinery v0.0.0-20190624085041-961b39a1baa0
 	k8s.io/client-go v11.0.0+incompatible
-	k8s.io/klog v0.3.1
-	k8s.io/kube-openapi v0.0.0-00010101000000-000000000000
+	k8s.io/klog v0.3.1 // indirect
+	k8s.io/kube-openapi v0.0.0-00010101000000-000000000000 // indirect
 	k8s.io/kubernetes v1.15.0
 	k8s.io/utils v0.0.0-20190221042446-c2654d5206da
-	sigs.k8s.io/yaml v1.1.0
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
 replace (
