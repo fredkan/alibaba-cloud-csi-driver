@@ -1,4 +1,4 @@
-package lvmd
+package lvmcs
 
 import (
 	"github.com/wavezhang/k8s-csi-lvm/pkg/lvmd"

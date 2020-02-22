@@ -1,13 +1,12 @@
-package lvmd
+package lvmcs
 
 import (
 	"github.com/google/go-microservice-helpers/server"
 	"github.com/google/go-microservice-helpers/tracing"
+	pb "github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda/lvmd/proto"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda/lvmd/server"
 	log "github.com/sirupsen/logrus"
 	"os"
-
-	pb "github.com/google/lvmd/proto"
-	"github.com/google/lvmd/server"
 )
 
 const (

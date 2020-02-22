@@ -20,7 +20,7 @@ import (
 	"errors"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
-	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils/lvmd"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda/lvmcs"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -236,7 +236,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 			if err != nil {
 				return nil, err
 			}
-			conn, err := lvmd.NewLVMConnection(addr, connectTimeout)
+			conn, err := lvmcs.NewLVMConnection(addr, connectTimeout)
 			defer conn.Close()
 			if err != nil {
 				log.Errorf("DeleteVolume: New lvm %s Connection error: %s", req.GetVolumeId(), err.Error())

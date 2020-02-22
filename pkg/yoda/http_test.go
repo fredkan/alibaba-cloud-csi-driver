@@ -27,7 +27,7 @@ func TestGetDiskVolumeOptions(t *testing.T) {
 	go http.ListenAndServe("127.0.0.1:23000", nil)
 
 	volumeType, pvcName, pvcNamespace, nodeId := "lvm", "pvc-lvm", "default", "node-1"
-	vloInfo, err := ScheduleVolume(volumeType, pvcName, pvcNamespace, nodeId)
+	vloInfo, err := ScheduleVolume(volumeType, pvcName, pvcNamespace, "", nodeId)
 	if err != nil {
 		t.Fatal("Test Fail")
 	}

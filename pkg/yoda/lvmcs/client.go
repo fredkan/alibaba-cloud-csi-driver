@@ -1,4 +1,4 @@
-package lvmd
+package lvmcs
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	lvmd "github.com/google/lvmd/proto"
+	pb "github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda/lvmd/proto"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -87,8 +87,8 @@ func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
 }
 
 func (c *lvmdConnection) CreateLvm(ctx context.Context, opt *LVMOptions) (string, error) {
-	client := lvmd.NewLVMClient(c.conn)
-	req := lvmd.CreateLVRequest{
+	client := pb.NewLVMClient(c.conn)
+	req := pb.CreateLVRequest{
 		VolumeGroup: opt.VolumeGroup,
 		Name:        opt.Name,
 		Size:        opt.Size,
@@ -104,8 +104,8 @@ func (c *lvmdConnection) CreateLvm(ctx context.Context, opt *LVMOptions) (string
 }
 
 func (c *lvmdConnection) GetLvm(ctx context.Context, volGroup string, volumeID string) (string, error) {
-	client := lvmd.NewLVMClient(c.conn)
-	req := lvmd.ListLVRequest{
+	client := pb.NewLVMClient(c.conn)
+	req := pb.ListLVRequest{
 		VolumeGroup: fmt.Sprintf("%s/%s", volGroup, volumeID),
 	}
 
@@ -122,8 +122,8 @@ func (c *lvmdConnection) GetLvm(ctx context.Context, volGroup string, volumeID s
 }
 
 func (c *lvmdConnection) DeleteLvm(ctx context.Context, volGroup, volumeID string) error {
-	client := lvmd.NewLVMClient(c.conn)
-	req := lvmd.RemoveLVRequest{
+	client := pb.NewLVMClient(c.conn)
+	req := pb.RemoveLVRequest{
 		VolumeGroup: volGroup,
 		Name:        volumeID,
 	}

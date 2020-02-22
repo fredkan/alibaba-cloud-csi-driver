@@ -19,8 +19,8 @@ package yoda
 import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
-	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/lvm/lvmd"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/yoda/lvmcs"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -89,7 +89,7 @@ func NewNodeServer(d *csicommon.CSIDriver, nodeID string) csi.NodeServer {
 		log.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
-	go lvmd.Start()
+	go lvmcs.Start()
 	return &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
 		nodeID:            nodeID,
