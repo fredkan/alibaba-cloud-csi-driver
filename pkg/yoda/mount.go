@@ -116,7 +116,13 @@ func (ns *nodeServer) mountLocalVolume(ctx context.Context, req *csi.NodePublish
 	if sourcePath == "" {
 		return status.Error(codes.Internal, "Mount LocalVolume with empty source path "+req.VolumeId)
 	}
-
+	log.Infof("NodePublishVolume: Starting Mount Volume %s, source %s > target %s", req.VolumeId, sourcePath, targetPath)
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "NodePublishVolume: Volume ID must be provided")
+	}
+	if req.VolumeCapability == nil {
+		return status.Error(codes.InvalidArgument, "NodePublishVolume: Volume Capability must be provided")
+	}
 	notmounted, err := ns.k8smounter.IsLikelyNotMountPoint(targetPath)
 	if err != nil {
 		return status.Error(codes.Internal, err.Error())
@@ -137,6 +143,10 @@ func (ns *nodeServer) mountLocalVolume(ctx context.Context, req *csi.NodePublish
 		fsType = mnt.FsType
 	}
 	log.Infof("NodePublishVolume: Starting mount local volume %s with flags %v and fsType %s", req.VolumeId, options, fsType)
+	//clean all the contents under the given directory
+	if err := ns.DeleteContents(sourcePath); err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
 	if err = ns.k8smounter.Mount(sourcePath, targetPath, fsType, options); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
@@ -151,6 +161,13 @@ func (ns *nodeServer) mountDeviceVolume(ctx context.Context, req *csi.NodePublis
 	}
 	if sourceDevice == "" {
 		return status.Error(codes.Internal, "Mount Device with empty source path "+req.VolumeId)
+	}
+	log.Infof("NodePublishVolume: Starting mount deivce volume %s, sourceDevice %s > target %s", req.VolumeId, sourceDevice, targetPath)
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "NodePublishVolume: Volume ID must be provided")
+	}
+	if req.VolumeCapability == nil {
+		return status.Error(codes.InvalidArgument, "NodePublishVolume: Volume Capability must be provided")
 	}
 
 	// Step Start to format
@@ -265,6 +282,27 @@ func (ns *nodeServer) createVolume(ctx context.Context, volumeID, vgName, lvmTyp
 			return err
 		}
 		log.Infof("Successful Create Linear LVM volume: %s, Size: %d%s, vgName: %s", volumeID, pvSize, unit, vgName)
+	}
+	return nil
+}
+
+// DeleteContents deletes all the contents under the given directory
+func (ns *nodeServer) DeleteContents(fullPath string) error {
+	dir, err := os.Open(fullPath)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+
+	files, err := dir.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		err = os.RemoveAll(filepath.Join(fullPath, file))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
