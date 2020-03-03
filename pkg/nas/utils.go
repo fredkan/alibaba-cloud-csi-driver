@@ -252,7 +252,8 @@ func SetNasEndPoint(regionID string) {
 	// use unitized region endpoint for blew regions.
 	// total 9 regions
 	unitizedRegions := []string{"cn-hangzhou", "cn-zhangjiakou", "cn-huhehaote", "cn-shenzhen",
-		"ap-southeast-1", "ap-southeast-2", "ap-southeast-5", "eu-central-1", "us-east-1"}
+		"ap-southeast-1", "ap-southeast-2", "ap-southeast-5", "eu-central-1", "us-east-1",
+		"eu-west-1", "cn-chengdu", "ap-northeast-1", "ap-southeast-3", "ap-south-1", "us-west-1"}
 
 	for _, tmpRegion := range unitizedRegions {
 		if regionID == tmpRegion {
