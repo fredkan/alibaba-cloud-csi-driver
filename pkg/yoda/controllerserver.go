@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"time"
@@ -254,7 +255,38 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 			}
 		}
 	} else if volumeType == MountPointType {
-		log.Infof("DeleteVolume: default to delete MountPoint volume type volume...")
+		if pvObj.Spec.PersistentVolumeReclaimPolicy == v1.PersistentVolumeReclaimDelete {
+			nodes := pvObj.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values
+			if len(nodes) == 0 {
+				log.Errorf("Get MountPoint Spec for volume %s, with empty nodes", volumeID)
+				return nil, errors.New("MountPoint Pv is illegal, No node info")
+			}
+
+			nodeName := nodes[0]
+			addr, err := getLvmdAddr(cs.client, nodeName)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := lvmcs.NewLVMConnection(addr, connectTimeout)
+			defer conn.Close()
+			if err != nil {
+				log.Errorf("DeleteVolume: New mountpoint %s Connection error: %s", req.GetVolumeId(), err.Error())
+				return nil, err
+			}
+			path := ""
+			if value, ok := pvObj.Spec.CSI.VolumeAttributes[MountPointType]; ok {
+				path = value
+			}
+			if path == "" {
+				log.Errorf("Get MountPoint Path for volume %s, with empty", volumeID)
+				return nil, errors.New("MountPoint Path is empty")
+			}
+			if err := conn.CleanPath(ctx, path); err != nil {
+				log.Errorf("DeleteVolume: Remove mountpoint for %s with error: %s", req.GetVolumeId(), err.Error())
+				return nil, errors.New("Delete mountpoint Failed: " + err.Error())
+			}
+		}
+		log.Infof("DeleteVolume: default to delete MountPoint volume(%s) type volume...", volumeID)
 	} else if volumeType == DeviceVolumeType {
 		log.Infof("DeleteVolume: default to delete Device volume type volume...")
 	}

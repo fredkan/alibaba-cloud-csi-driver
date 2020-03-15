@@ -99,6 +99,14 @@ func (s Server) RemoveVG(ctx context.Context, in *pb.CreateVGRequest) (*pb.Remov
 	return &pb.RemoveVGReply{CommandOutput: log}, nil
 }
 
+func (s Server) CleanPath(ctx context.Context, in *pb.CleanPathRequest) (*pb.CleanPathReply, error) {
+	err := commands.CleanPath(ctx, in.Path)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to remove vg: %v", err)
+	}
+	return &pb.CleanPathReply{CommandOutput: "Successful remove path: " + in.Path}, nil
+}
+
 func (s Server) AddTagLV(ctx context.Context, in *pb.AddTagLVRequest) (*pb.AddTagLVReply, error) {
 	log, err := commands.AddTagLV(ctx, in.VolumeGroup, in.Name, in.Tags)
 	if err != nil {

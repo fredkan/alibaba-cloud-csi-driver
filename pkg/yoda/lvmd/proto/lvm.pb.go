@@ -987,6 +987,32 @@ func (m *ListVGReply) GetVolumeGroups() []*VolumeGroup {
 	return nil
 }
 
+type CleanPathRequest struct {
+	Path string `protobuf:"bytes,1,opt,name=name,proto3" json:"path,omitempty"`
+}
+
+func (*CleanPathRequest) ProtoMessage()    {}
+func (m *CleanPathRequest) Reset()         { *m = CleanPathRequest{} }
+func (m *CleanPathRequest) String() string { return proto.CompactTextString(m) }
+
+type CleanPathReply struct {
+	CommandOutput        string   `protobuf:"bytes,1,opt,name=command_output,json=commandOutput,proto3" json:"command_output,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *CleanPathReply) Reset()         { *m = CleanPathReply{} }
+func (m *CleanPathReply) String() string { return proto.CompactTextString(m) }
+func (*CleanPathReply) ProtoMessage()    {}
+
+func (m *CleanPathReply) GetCommandOutput() string {
+	if m != nil {
+		return m.CommandOutput
+	}
+	return ""
+}
+
 type CreateVGRequest struct {
 	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	PhysicalVolume       string   `protobuf:"bytes,2,opt,name=physical_volume,json=physicalVolume,proto3" json:"physical_volume,omitempty"`
@@ -1357,6 +1383,8 @@ func no_init() {
 	proto.RegisterType((*CreateVGReply)(nil), "lvm.CreateVGReply")
 	proto.RegisterType((*RemoveVGRequest)(nil), "lvm.RemoveVGRequest")
 	proto.RegisterType((*RemoveVGReply)(nil), "lvm.RemoveVGReply")
+	proto.RegisterType((*CleanPathRequest)(nil), "lvm.CleanPathRequest")
+	proto.RegisterType((*CleanPathReply)(nil), "lvm.CleanPathReply")
 	proto.RegisterType((*AddTagLVRequest)(nil), "lvm.AddTagLVRequest")
 	proto.RegisterType((*AddTagLVReply)(nil), "lvm.AddTagLVReply")
 	proto.RegisterType((*RemoveTagLVRequest)(nil), "lvm.RemoveTagLVRequest")
@@ -1390,6 +1418,7 @@ type LVMClient interface {
 	ListVG(ctx context.Context, in *ListVGRequest, opts ...grpc.CallOption) (*ListVGReply, error)
 	CreateVG(ctx context.Context, in *CreateVGRequest, opts ...grpc.CallOption) (*CreateVGReply, error)
 	RemoveVG(ctx context.Context, in *CreateVGRequest, opts ...grpc.CallOption) (*RemoveVGReply, error)
+	CleanPath(ctx context.Context, in *CleanPathRequest, opts ...grpc.CallOption) (*CleanPathReply, error)
 }
 
 type lVMClient struct {
@@ -1481,6 +1510,15 @@ func (c *lVMClient) RemoveVG(ctx context.Context, in *CreateVGRequest, opts ...g
 	return out, nil
 }
 
+func (c *lVMClient) CleanPath(ctx context.Context, in *CleanPathRequest, opts ...grpc.CallOption) (*CleanPathReply, error) {
+	out := new(CleanPathReply)
+	err := c.cc.Invoke(ctx, "/lvm.LVM/CleanPath", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LVMServer is the server API for LVM service.
 type LVMServer interface {
 	ListLV(context.Context, *ListLVRequest) (*ListLVReply, error)
@@ -1492,6 +1530,7 @@ type LVMServer interface {
 	ListVG(context.Context, *ListVGRequest) (*ListVGReply, error)
 	CreateVG(context.Context, *CreateVGRequest) (*CreateVGReply, error)
 	RemoveVG(context.Context, *CreateVGRequest) (*RemoveVGReply, error)
+	CleanPath(context.Context, *CleanPathRequest) (*CleanPathReply, error)
 }
 
 func RegisterLVMServer(s *grpc.Server, srv LVMServer) {
@@ -1660,6 +1699,24 @@ func _LVM_RemoveVG_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CleanPath_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CleanPathRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LVMServer).CleanPath(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/lvm.LVM/CleanPath",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LVMServer).CleanPath(ctx, req.(*CleanPathRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _LVM_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "lvm.LVM",
 	HandlerType: (*LVMServer)(nil),
@@ -1699,6 +1756,10 @@ var _LVM_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveVG",
 			Handler:    _LVM_RemoveVG_Handler,
+		},
+		{
+			MethodName: "CleanPath",
+			Handler:    _CleanPath_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

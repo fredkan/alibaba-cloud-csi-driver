@@ -21,6 +21,8 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/opentracing/opentracing-go"
@@ -207,6 +209,31 @@ func RemoveVG(ctx context.Context, name string) (string, error) {
 	out, err := Run(cmd)
 
 	return string(out), err
+}
+
+// CleanPath deletes all the contents under the given directory
+func CleanPath(ctx context.Context, path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+
+	files, err := dir.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	errList := []error{}
+	for _, file := range files {
+		err = os.RemoveAll(filepath.Join(path, file))
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	if len(errList) == 0 {
+		return nil
+	}
+	return errList[0]
 }
 
 func AddTagLV(ctx context.Context, vg string, name string, tags []string) (string, error) {

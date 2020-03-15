@@ -19,6 +19,7 @@ type LVMConnection interface {
 	GetLvm(ctx context.Context, volGroup string, volumeID string) (string, error)
 	CreateLvm(ctx context.Context, opt *LVMOptions) (string, error)
 	DeleteLvm(ctx context.Context, volGroup string, volumeID string) error
+	CleanPath(ctx context.Context, path string) error
 	Close() error
 }
 
@@ -128,6 +129,16 @@ func (c *lvmdConnection) DeleteLvm(ctx context.Context, volGroup, volumeID strin
 		Name:        volumeID,
 	}
 	response, err := client.RemoveLV(ctx, &req)
+	log.Infof("remove Lvm with result: %v", response.GetCommandOutput())
+	return err
+}
+
+func (c *lvmdConnection) CleanPath(ctx context.Context, path string) error {
+	client := pb.NewLVMClient(c.conn)
+	req := pb.CleanPathRequest{
+		Path: path,
+	}
+	response, err := client.CleanPath(ctx, &req)
 	log.Infof("remove Lvm with result: %v", response.GetCommandOutput())
 	return err
 }
