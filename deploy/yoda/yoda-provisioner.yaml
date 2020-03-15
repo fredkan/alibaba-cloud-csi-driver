@@ -45,11 +45,13 @@ spec:
         - name: csi-provisioner
           image: registry.cn-hangzhou.aliyuncs.com/plugins/csi-provisioner:v1.5.4478651db-aliyun
           args:
-            - "--provisioner=yodaplugin.csi.alibabacloud.com"
-            - "--csi-address=$(ADDRESS)"
-            - "--volume-name-prefix=yoda"
-            - "--feature-gates=Topology=True"
-            - "--v=5"
+            - --provisioner=yodaplugin.csi.alibabacloud.com
+            - --csi-address=$(ADDRESS)
+            - --volume-name-prefix=yoda
+            - --feature-gates=Topology=True
+            - --strict-topology=True
+            - --extra-create-metadata=true
+            - --v=5
           env:
             - name: ADDRESS
               value: /var/lib/kubelet/plugins/yodaplugin.csi.alibabacloud.com/csi.sock

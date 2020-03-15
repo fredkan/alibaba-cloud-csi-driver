@@ -29,10 +29,6 @@ spec:
         - name: driver-registrar
           image: registry.cn-hangzhou.aliyuncs.com/acs/csi-node-driver-registrar:v1.2.0
           imagePullPolicy: Always
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/yodaplugin.csi.alibabacloud.com /registration/yodaplugin.csi.alibabacloud.com-reg.sock"]
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
