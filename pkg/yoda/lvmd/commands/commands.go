@@ -47,20 +47,22 @@ func ListLV(ctx context.Context, listspec string) ([]*parser.LV, error) {
 		"-o", "lv_name,lv_size,lv_uuid,lv_attr,copy_percent,lv_kernel_major,lv_kernel_minor,lv_tags", "--nameprefixes", "-a", listspec}
 	cmd := strings.Join(cmdList, " ")
 	out, err := Run(cmd)
-
 	if err != nil {
 		return nil, err
 	}
 	outStr := strings.TrimSpace(string(out))
 	outLines := strings.Split(outStr, "\n")
-	lvs := make([]*parser.LV, len(outLines))
-	for i, line := range outLines {
+	lvs := []*parser.LV{}
+	for _, line := range outLines {
 		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "LVM2_LV_NAME") {
+			continue
+		}
 		lv, err := parser.ParseLV(line)
 		if err != nil {
-			return nil, err
+			return nil, errors.New("Parse LVM: " + line + ", with error: " + err.Error())
 		}
-		lvs[i] = lv
+		lvs = append(lvs, lv)
 	}
 	return lvs, nil
 }
