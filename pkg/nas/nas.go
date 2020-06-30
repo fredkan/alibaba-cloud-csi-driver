@@ -17,6 +17,7 @@ limitations under the License.
 package nas
 
 import (
+	aliNas "github.com/aliyun/alibaba-cloud-sdk-go/services/nas"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
@@ -49,6 +50,7 @@ type GlobalConfig struct {
 	ADControllerEnable bool
 	MetricEnable       bool
 	RunTimeClass       string
+	NasClient          *aliNas.Client
 }
 
 // NAS the NAS object
@@ -80,9 +82,6 @@ func NewDriver(nodeID, endpoint string) *NAS {
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 	})
 
-	// Global Configs Set
-	GlobalConfigSet()
-
 	d.driver = csiDriver
 	accessKeyID, accessSecret, accessToken := utils.GetDefaultAK()
 	c := newNasClient(accessKeyID, accessSecret, accessToken)
@@ -91,6 +90,9 @@ func NewDriver(nodeID, endpoint string) *NAS {
 		region = GetMetaData(RegionTag)
 	}
 	d.controllerServer = NewControllerServer(d.driver, c, region)
+
+	// Global Configs Set
+	GlobalConfigSet(c)
 
 	return d
 }
@@ -106,7 +108,7 @@ func (d *NAS) Run() {
 }
 
 // GlobalConfigSet set global config
-func GlobalConfigSet() {
+func GlobalConfigSet(nasClient *aliNas.Client) {
 	// Global Configs Set
 	cfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 	if err != nil {
@@ -119,6 +121,7 @@ func GlobalConfigSet() {
 
 	configMapName := "csi-plugin"
 	isNasMetricEnable := false
+	nasTagEnable := false
 
 	configMap, err := kubeClient.CoreV1().ConfigMaps("kube-system").Get(configMapName, metav1.GetOptions{})
 	if err != nil {
@@ -130,6 +133,12 @@ func GlobalConfigSet() {
 				isNasMetricEnable = true
 			}
 		}
+		if value, ok := configMap.Data["nas-tag-enable"]; ok {
+			if value == "enable" || value == "yes" || value == "true" {
+				log.Infof("Nas tag is enabled by configMap(%s).", value)
+				nasTagEnable = true
+			}
+		}
 	}
 
 	metricNasConf := os.Getenv(NasMetricByPlugin)
@@ -137,6 +146,13 @@ func GlobalConfigSet() {
 		isNasMetricEnable = true
 	} else if metricNasConf == "false" || metricNasConf == "no" {
 		isNasMetricEnable = false
+	}
+
+	nasTagConf := os.Getenv(NasTagByPlugin)
+	if nasTagConf == "true" || nasTagConf == "yes" {
+		nasTagEnable = true
+	} else if nasTagConf == "false" || nasTagConf == "no" {
+		nasTagEnable = false
 	}
 
 	nodeName := os.Getenv("KUBE_NODE_NAME")
@@ -153,5 +169,6 @@ func GlobalConfigSet() {
 
 	GlobalConfigVar.MetricEnable = isNasMetricEnable
 	GlobalConfigVar.RunTimeClass = runtimeValue
-
+	GlobalConfigVar.NasTagEnable = nasTagEnable
+	GlobalConfigVar.NasClient = nasClient
 }

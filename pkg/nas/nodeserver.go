@@ -72,6 +72,8 @@ const (
 	NasPortnum = "2049"
 	// NasMetricByPlugin tag
 	NasMetricByPlugin = "NAS_METRIC_BY_PLUGIN"
+	// NasTagByPlugin tag
+	NasTagByPlugin = "NAS_TAGED_BY_PLUGIN"
 	// MixRunTimeMode support both runc and runv
 	MixRunTimeMode = "runc-runv"
 	// RunvRunTimeMode tag
@@ -133,6 +135,11 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			}
 			opt.Options = parseOptions
 		}
+	}
+
+	// tag nas as k8s.aliyun.com=true
+	if GlobalConfigVar.NasTagEnable {
+		tagNasAsK8sMounted(opt.Server)
 	}
 
 	// running in runc/runv mode

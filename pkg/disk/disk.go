@@ -140,7 +140,7 @@ func (disk *DISK) Run() {
 func GlobalConfigSet(client *ecs.Client, region, nodeID string) {
 	configMapName := "csi-plugin"
 	isADControllerEnable := false
-	isDiskTagEnable := false
+	isDiskTagEnable := true
 	isDiskMetricEnable := true
 	isDiskDetachDisable := false
 	isDiskDetachBeforeDelete := true

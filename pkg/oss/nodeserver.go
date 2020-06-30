@@ -64,6 +64,8 @@ const (
 	AkID = "akId"
 	// AkSecret is Ak Secret
 	AkSecret = "akSecret"
+	// OssTagByPlugin tag
+	OssTagByPlugin = "OSS_TAGED_BY_PLUGIN"
 	// SharedPath is the shared mountpoint when UseSharedPath is "true"
 	SharedPath = "/var/lib/kubelet/plugins/kubernetes.io/csi/pv/%s/globalmount"
 	// OssFsType is the oss filesystem type
@@ -189,6 +191,11 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 				return nil, errors.New("Create OSS volume fail: " + err.Error() + ", out: " + out)
 			}
 		}
+	}
+
+	// tag disk as k8s.aliyun.com=true
+	if GlobalConfigVar.OssTagEnable {
+		tagOssAsK8sMounted(opt)
 	}
 
 	log.Infof("NodePublishVolume:: Mount Oss successful, volume %s, targetPath: %s, with Command: %s", req.VolumeId, mountPath, mntCmd)

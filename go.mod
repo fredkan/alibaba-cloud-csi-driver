@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.61.201
+	github.com/aliyun/aliyun-oss-go-sdk v2.1.2+incompatible
 	github.com/container-storage-interface/spec v1.1.0
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-00010101000000-000000000000 // indirect

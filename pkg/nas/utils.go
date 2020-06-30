@@ -355,3 +355,8 @@ func ParseMountFlags(mntOptions []string) (string, string) {
 	}
 	return "", ""
 }
+
+// tag nas with: k8s.aliyun.com=true
+func tagNasAsK8sMounted(server string) {
+
+}

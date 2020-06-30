@@ -17,11 +17,16 @@ limitations under the License.
 package oss
 
 import (
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
 	log "github.com/sirupsen/logrus"
-
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 	k8smount "k8s.io/kubernetes/pkg/util/mount"
+	"os"
 )
 
 const (
@@ -29,8 +34,21 @@ const (
 )
 
 var (
-	version = "1.0.0"
+	version    = "1.0.0"
+	masterURL  string
+	kubeconfig string
+	// GlobalConfigVar Global Config
+	GlobalConfigVar GlobalConfig
 )
+
+// GlobalConfig save global values for plugin
+type GlobalConfig struct {
+	OssTagEnable bool
+	MetricEnable bool
+	RunTimeClass string
+	OssClient    *oss.Client
+	RegionID     string
+}
 
 // OSS the OSS object
 type OSS struct {
@@ -60,6 +78,8 @@ func NewDriver(nodeID, endpoint string) *OSS {
 
 	d.driver = csiDriver
 
+	// Global Configs Set
+	GlobalConfigSet()
 	return d
 }
 
@@ -80,4 +100,49 @@ func (d *OSS) Run() {
 		//csicommon.NewDefaultControllerServer(d.driver),
 		newNodeServer(d))
 	s.Wait()
+}
+
+// GlobalConfigSet set global config
+func GlobalConfigSet() {
+	// Global Configs Set
+	cfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
+	if err != nil {
+		log.Fatalf("Error building kubeconfig: %s", err.Error())
+	}
+	kubeClient, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		log.Fatalf("Error building kubernetes clientset: %s", err.Error())
+	}
+
+	configMapName := "csi-plugin"
+	ossTagEnable := true
+
+	configMap, err := kubeClient.CoreV1().ConfigMaps("kube-system").Get(configMapName, metav1.GetOptions{})
+	if err != nil {
+		log.Infof("Not found configmap named as csi-plugin under kube-system, with error: %v", err)
+	} else {
+		if value, ok := configMap.Data["oss-tag-enable"]; ok {
+			if value == "enable" || value == "yes" || value == "true" {
+				log.Infof("Oss Tag is enabled by configMap(%s).", value)
+				ossTagEnable = true
+			}
+		}
+	}
+
+	ossTagConf := os.Getenv(OssTagByPlugin)
+	if ossTagConf == "true" || ossTagConf == "yes" {
+		ossTagEnable = true
+	} else if ossTagConf == "false" || ossTagConf == "no" {
+		ossTagEnable = false
+	}
+
+	regionID, _ := utils.GetMetaData(RegionTag)
+	ossEndpoint := getOssEndpoint("vpc", regionID)
+	ossClient, _ := newOSSClient("", "", "", ossEndpoint)
+
+	GlobalConfigVar.OssTagEnable = ossTagEnable
+	GlobalConfigVar.OssClient = ossClient
+	GlobalConfigVar.RegionID = regionID
+
+	log.Infof("GlobalConfigVar values: %+v", GlobalConfigVar)
 }

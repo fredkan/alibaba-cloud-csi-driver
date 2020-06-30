@@ -18,7 +18,9 @@ package oss
 
 import (
 	"fmt"
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -31,6 +33,16 @@ const (
 	InstanceID = "instance-id"
 	// RAMRoleResource is ram-role url subpath
 	RAMRoleResource = "ram/security-credentials/"
+	// RegionTag is region id
+	RegionTag = "region-id"
+	// Endpoint is OSS endpoint
+	Endpoint = "oss-%s.aliyuncs.com"
+	// InternalEndpoint is OSS internal endpoint
+	InternalEndpoint = "oss-%s-internal.aliyuncs.com"
+	// OSSTAGKEY1 key
+	OSSTAGKEY1 = "k8s.aliyun.com"
+	// OSSTAGVALUE1 value
+	OSSTAGVALUE1 = "true"
 )
 
 // GetMetaData get host regionid, zoneid
@@ -77,4 +89,66 @@ func IsLastSharedVol(pvName string) (string, error) {
 		return "0", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func newOSSClient(customAccessKeyID, customAccessKeySecret, customAccessKeyToken, endpoint string) (ossClient *oss.Client, err error) {
+	if customAccessKeyID != "" && customAccessKeySecret != "" && customAccessKeyToken == "" {
+		ossClient, err = oss.New(endpoint, customAccessKeyID, customAccessKeySecret)
+	} else if customAccessKeyID != "" && customAccessKeySecret != "" && customAccessKeyToken != "" {
+		ossClient, err = oss.New(endpoint, customAccessKeyID, customAccessKeySecret, oss.SecurityToken(customAccessKeyToken))
+	} else {
+		accessKeyID, accessKeySecret, accessToken := utils.GetDefaultAK()
+		ossClient, err = oss.New(endpoint, accessKeyID, accessKeySecret, oss.SecurityToken(accessToken))
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return ossClient, nil
+}
+
+func getOssEndpoint(networkType, regionID string) (endpoint string) {
+	if networkType == "vpc" {
+		endpoint = fmt.Sprintf(InternalEndpoint, regionID)
+	} else {
+		endpoint = fmt.Sprintf(Endpoint, regionID)
+	}
+	return
+}
+
+// tag disk with: k8s.aliyun.com=true
+func tagOssAsK8sMounted(option *Options) {
+	var err error
+	if option.AuthType == "sts" {
+		GlobalConfigVar.OssClient, err = newOSSClient("", "", "", option.URL)
+	} else {
+		GlobalConfigVar.OssClient, err = newOSSClient(option.AkID, option.AkSecret, "", option.URL)
+	}
+	if err != nil {
+		log.Warnf("tagOssAsK8sMounted update oss client for bucket %s with error %v", option.Bucket, err)
+		return
+	}
+
+	// Step 1: Describe oss, if tag exist, return;
+	taggingResult, err := GlobalConfigVar.OssClient.GetBucketTagging(option.Bucket)
+	if err != nil {
+		log.Warnf("GetBucketTagging for oss bucket %s with error: %s", option.Bucket, err.Error())
+		return
+	}
+	for _, tag := range taggingResult.Tags {
+		if tag.Key == OSSTAGKEY1 && tag.Value == OSSTAGVALUE1 {
+			return
+		}
+	}
+
+	ossTag := oss.Tag{Key: OSSTAGKEY1, Value: OSSTAGVALUE1}
+	ossTagging := oss.Tagging{}
+	ossTagging.Tags = taggingResult.Tags
+	ossTagging.Tags = append(ossTagging.Tags, ossTag)
+	err = GlobalConfigVar.OssClient.SetBucketTagging(option.Bucket, ossTagging)
+	if err != nil {
+		log.Warnf("SetBucketTagging for oss bucket %s with error: %s", option.Bucket, err.Error())
+		return
+	}
+	log.Infof("SetBucketTagging successful for bucket %s", option.Bucket)
 }

@@ -11,6 +11,8 @@ github.com/aliyun/alibaba-cloud-sdk-go/sdk/responses
 github.com/aliyun/alibaba-cloud-sdk-go/sdk/utils
 github.com/aliyun/alibaba-cloud-sdk-go/services/ecs
 github.com/aliyun/alibaba-cloud-sdk-go/services/nas
+# github.com/aliyun/aliyun-oss-go-sdk v2.1.2+incompatible
+github.com/aliyun/aliyun-oss-go-sdk/oss
 # github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 => github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 github.com/beorn7/perks/quantile
 # github.com/container-storage-interface/spec v1.1.0 => github.com/container-storage-interface/spec v1.1.0
