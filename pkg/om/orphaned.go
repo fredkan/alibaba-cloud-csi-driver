@@ -51,9 +51,6 @@ func FixOrphanedPodIssue(line string) bool {
 		log.Warnf("OrphanPod: List Volumes with error: %s, line: %s", err.Error(), line)
 		return false
 	}
-	if len(volumes) == 0 {
-		FixedPodList[orphanUID] = "fixed"
-	}
 	for _, volume := range volumes {
 		volumePath := filepath.Join(csiPodPath, volume.Name())
 		volumeMountPath := filepath.Join(volumePath, "mount")
@@ -82,6 +79,13 @@ func FixOrphanedPodIssue(line string) bool {
 				log.Infof("OrphanPod: Remove Volume Path %s Successful", volumePath)
 			}
 		}
+	}
+
+	if !IsFileExisting(csiPodPath) {
+		FixedPodList[orphanUID] = "fixed"
+	}
+	if empty, _ := utils.IsDirEmpty(csiPodPath); empty {
+		FixedPodList[orphanUID] = "fixed"
 	}
 	return true
 }
@@ -117,9 +121,6 @@ func FixSubPathOrphanedPodIssue(line string) bool {
 	if err != nil {
 		log.Warnf("OrphanPod: List Sub Volumes with error: %s, line: %s", err.Error(), line)
 		return false
-	}
-	if len(volumes) == 0 {
-		FixedSubPathPodList[orphanUID] = "fixed"
 	}
 
 	for _, volume := range volumes {
@@ -167,6 +168,10 @@ func FixSubPathOrphanedPodIssue(line string) bool {
 		} else {
 			log.Infof("OrphanPod: Successful Remove Root Path(%s).", csiPodPath)
 		}
+	}
+
+	if !IsFileExisting(csiPodPath) {
+		FixedSubPathPodList[orphanUID] = "fixed"
 	}
 	return true
 }
