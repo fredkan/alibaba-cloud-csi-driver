@@ -65,9 +65,11 @@ func CheckMessageFileIssue() {
 
 			}
 			// Fix Orphaned Pod Issue
-		} else if GlobalConfigVar.IssueOrphanedPod && strings.Contains(line, "rphaned pod") && strings.Contains(line, "found, but volume paths are still present on disk") {
-			if FixOrphanedPodIssue(line) {
-
+		} else if GlobalConfigVar.IssueOrphanedPod && strings.Contains(line, "rphaned pod") {
+			if strings.Contains(line, "found, but volume paths are still present on disk") {
+				FixOrphanedPodIssue(line)
+			} else if strings.Contains(line, "found, but volume subpaths are still present on disk") {
+				FixSubPathOrphanedPodIssue(line)
 			}
 		}
 	}

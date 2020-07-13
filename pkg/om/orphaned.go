@@ -13,6 +13,8 @@ import (
 var (
 	// FixedPodList fix pod
 	FixedPodList = map[string]string{}
+	// FixedSubPathPodList fix pod
+	FixedSubPathPodList = map[string]string{}
 	// K8sMounter mounter
 	K8sMounter = k8smount.New("")
 )
@@ -79,6 +81,91 @@ func FixOrphanedPodIssue(line string) bool {
 			} else {
 				log.Infof("OrphanPod: Remove Volume Path %s Successful", volumePath)
 			}
+		}
+	}
+	return true
+}
+
+// FixSubPathOrphanedPodIssue Pod Like:
+// Jul 13 20:23:01 iZwz96zhxfn3iajc89zb0gZ kubelet: E0713 20:23:01.027740   60974 kubelet_volumes.go:154] orphaned pod "cbefa9e9-9572-4bc8-809b-18083b88b232" found,
+// but volume subpaths are still present on disk : There were a total of 1 errors similar to this. Turn up verbosity to see them.
+func FixSubPathOrphanedPodIssue(line string) bool {
+	splitStr := strings.Split(line, "rphaned pod")
+	if len(splitStr) < 2 {
+		log.Warnf("OrphanPod: Error orphaned line subpath format: %s", line)
+		return false
+	}
+	partStr := strings.Split(splitStr[1], "\"")
+	if len(partStr) < 2 {
+		log.Warnf("OrphanPod: Error line subpath format: %s", line)
+		return false
+	}
+	orphanUID := partStr[1]
+	if len(strings.Split(orphanUID, "-")) != 5 {
+		log.Warnf("OrphanPod: Error Pod Uid subpath format: %s, %s", orphanUID, line)
+		return false
+	}
+
+	// break fixed orphaned pod
+	if value, ok := FixedSubPathPodList[orphanUID]; ok && value == "fixed" {
+		return true
+	}
+
+	// check kubernetes csi volumes
+	csiPodPath := filepath.Join("/var/lib/kubelet/pods", orphanUID, "volume-subpaths")
+	volumes, err := ioutil.ReadDir(csiPodPath)
+	if err != nil {
+		log.Warnf("OrphanPod: List Sub Volumes with error: %s, line: %s", err.Error(), line)
+		return false
+	}
+	if len(volumes) == 0 {
+		FixedSubPathPodList[orphanUID] = "fixed"
+	}
+
+	for _, volume := range volumes {
+		volumePath := filepath.Join(csiPodPath, volume.Name())
+		containers, err := ioutil.ReadDir(volumePath)
+		if err != nil {
+			log.Warnf("OrphanPod: List Sub Volumes with error: %s, line: %s", err.Error(), line)
+			return false
+		}
+		for _, container := range containers {
+			containerPath := filepath.Join(volumePath, container.Name())
+			containerPaths, err := ioutil.ReadDir(containerPath)
+			if err != nil {
+				log.Warnf("OrphanPod: List Sub Volumes with error: %s, line: %s", err.Error(), line)
+				return false
+			}
+			for _, subpath := range containerPaths {
+				subPathName := filepath.Join(containerPath, subpath.Name())
+				if err := k8smount.CleanupMountPoint(subPathName, K8sMounter, false); err != nil {
+					log.Errorf("OrphanPod: CleanupMountPoint for subpath %s, with Error: %s, Log: %s", subPathName, err.Error(), line)
+					continue
+				} else {
+					log.Infof("OrphanPod: Successful Remove SubPath(%s).", subPathName)
+				}
+			}
+			if empty, _ := utils.IsDirEmpty(containerPath); empty {
+				if err := os.Remove(containerPath); err != nil {
+					log.Errorf("OrphanPod: Remove for Container Path %s, with Error: %s", containerPath, err.Error())
+				} else {
+					log.Infof("OrphanPod: Successful Remove Container Path(%s).", containerPath)
+				}
+			}
+		}
+		if empty, _ := utils.IsDirEmpty(volumePath); empty {
+			if err := os.Remove(volumePath); err != nil {
+				log.Errorf("OrphanPod: Remove for Volume Path %s, with Error: %s", volumePath, err.Error())
+			} else {
+				log.Infof("OrphanPod: Successful Remove Volume Path(%s).", volumePath)
+			}
+		}
+	}
+	if empty, _ := utils.IsDirEmpty(csiPodPath); empty {
+		if err := os.Remove(csiPodPath); err != nil {
+			log.Errorf("OrphanPod: Remove for Root Path %s, with Error: %s", csiPodPath, err.Error())
+		} else {
+			log.Infof("OrphanPod: Successful Remove Root Path(%s).", csiPodPath)
 		}
 	}
 	return true
