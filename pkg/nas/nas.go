@@ -78,6 +78,7 @@ func NewDriver(nodeID, endpoint string) *NAS {
 	csiDriver.AddControllerServiceCapabilities([]csi.ControllerServiceCapability_RPC_Type{
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
+		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 	})
 
 	// Global Configs Set
@@ -150,7 +151,12 @@ func GlobalConfigSet() {
 		}
 		log.Infof("Describe node %s and set RunTimeClass to %s", nodeName, runtimeValue)
 	}
-
+	runtimeEnv := os.Getenv("RUNTIME")
+	if runtimeEnv == MixRunTimeMode {
+		runtimeValue = MixRunTimeMode
+	} else if runtimeEnv == "runc" {
+		runtimeValue = "runc"
+	}
 	GlobalConfigVar.MetricEnable = isNasMetricEnable
 	GlobalConfigVar.RunTimeClass = runtimeValue
 

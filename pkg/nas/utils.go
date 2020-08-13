@@ -38,6 +38,8 @@ const (
 	MetadataURL = "http://100.100.100.200/latest/meta-data/"
 	// RegionTag is region id
 	RegionTag = "region-id"
+	// NsenterCmd is nsenter mount command
+	NsenterCmd = "/nsenter --mount=/proc/1/ns/mnt"
 )
 
 var (
@@ -357,4 +359,77 @@ func ParseMountFlags(mntOptions []string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func createLosetupPv(pvName, fullPath string, volSizeBytes int64) error {
+	blockNum := volSizeBytes/(4*1024)
+	fileName := filepath.Join(fullPath, pvName+".img")
+	imgCmd := fmt.Sprintf("dd if=/dev/zero of=%s bs=4k seek=%d count=0", fileName, blockNum)
+	_, err := utils.Run(imgCmd)
+	if err != nil {
+		return err
+	}
+
+	formatCmd := fmt.Sprintf("mkfs.ext4 -F -m0 %s", fileName)
+	_, err = utils.Run(formatCmd)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// /var/lib/kubelet/pods/5e03c7f7-2946-4ee1-ad77-2efbc4fdb16c/volumes/kubernetes.io~csi/nas-f5308354-725a-4fd3-b613-0f5b384bd00e/mount
+func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
+	pathList := strings.Split(mountPoint, "/")
+
+	if len(pathList) != 10 {
+		return fmt.Errorf("mountPoint format error, %s", mountPoint)
+	}
+
+	podID := pathList[5]
+	pvName := pathList[8]
+
+	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
+	if err := utils.CreateDest(nfsPath); err != nil {
+		return fmt.Errorf("Create nfs mountPath error %s ", err.Error())
+	}
+	DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, nfsPath, volumeID)
+
+	lockFile := filepath.Join(nfsPath, pvName+".lck")
+	if utils.IsFileExisting(lockFile) {
+		return fmt.Errorf("nfs losetup file is used by others %s", lockFile)
+	}
+	imgFile := filepath.Join(nfsPath, pvName + ".img")
+	mountCmd := fmt.Sprintf("%s mount -o loop %s %s", NsenterCmd, imgFile, mountPoint)
+	_, err := utils.Run(mountCmd)
+	if err != nil {
+		return fmt.Errorf("Mount nfs losetup error %s", err.Error())
+	}
+	if err := ioutil.WriteFile(lockFile, ([]byte)(pvName), 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkLosetupUnmount(mountPoint string) error {
+	pathList := strings.Split(mountPoint, "/")
+	if len(pathList) != 10 {
+		return fmt.Errorf("checkLosetupUnmount: mountPoint format error %s", mountPoint)
+	}
+	podID := pathList[5]
+	pvName := pathList[8]
+	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
+	imgFile := filepath.Join(nfsPath, pvName + ".img")
+	lockFile := filepath.Join(nfsPath, pvName+".lck")
+	if utils.IsFileExisting(imgFile) {
+		if err := os.Remove(lockFile); err != nil {
+			return fmt.Errorf("checkLosetupUnmount: remove lock file error %v", err)
+		}
+	}
+
+	if err := utils.Umount(nfsPath); err != nil {
+		return fmt.Errorf("checkLosetupUnmount: umount nfs path error %v", err)
+	}
+	log.Infof("Losetup Unmount successful %s", mountPoint)
+	return nil
 }

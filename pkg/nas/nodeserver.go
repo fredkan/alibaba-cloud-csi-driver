@@ -49,6 +49,7 @@ type Options struct {
 	Vers     string `json:"vers"`
 	Mode     string `json:"mode"`
 	ModeType string `json:"modeType"`
+	MountType string `json:"mountType"`
 	Options  string `json:"options"`
 }
 
@@ -76,6 +77,8 @@ const (
 	MixRunTimeMode = "runc-runv"
 	// RunvRunTimeMode tag
 	RunvRunTimeMode = "runv"
+	// NasMntPoint
+	NasMntPoint = "/mnt/nasplugin.alibabacloud.com"
 )
 
 //newNodeServer create the csi node server
@@ -114,6 +117,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			opt.Options = value
 		} else if key == "modeType" {
 			opt.ModeType = value
+		} else if key == "mountType" {
+			opt.MountType = value
 		}
 	}
 
@@ -216,6 +221,14 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		opt.Options = ""
 	}
 
+	if opt.MountType == "losetup" {
+		if err := mountLosetupPv(mountPath, opt, req.VolumeId); err != nil {
+			return nil, errors.New("Nas, mount Losetup volume error with: " + err.Error())
+		}
+		log.Infof("NodePublishVolume: losetup volume successful %s", req.VolumeId)
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
 	if utils.IsMounted(mountPath) {
 		log.Infof("Nas, Mount Path Already Mount, options: %s", mountPath)
 		return &csi.NodePublishVolumeResponse{}, nil
@@ -290,6 +303,11 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, errors.New("Nas, Umount nfs Fail: " + err.Error())
 	}
 
+	if err := checkLosetupUnmount(mountPoint); err != nil {
+		log.Errorf("NodeUnpublishVolume: umount lostup volume with error: %v", err)
+		return nil, errors.New("Nas, check Losetup Unmount Fail: " + err.Error())
+	}
+
 	log.Infof("Umount Nas Successful on: %s", mountPoint)
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
@@ -310,7 +328,48 @@ func (ns *nodeServer) NodeUnstageVolume(
 
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (
 	*csi.NodeExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	pathList := strings.Split(req.VolumePath, "/")
+	if len(pathList) != 10 {
+		log.Errorf("NodeExpandVolume: Mountpoint Format error", req.VolumePath)
+		return nil, fmt.Errorf("NodeExpandVolume: mountPoint format error, %s", req.VolumePath)
+	}
+	podID := pathList[5]
+	pvName := pathList[8]
+	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
+	imgFile := filepath.Join(nfsPath, pvName + ".img")
+	if utils.IsFileExisting(imgFile) {
+		volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
+		blockNum := volSizeBytes/(4*1024)
+		imgCmd := fmt.Sprintf("dd if=/dev/zero of=%s bs=4k seek=%d count=0", imgFile, blockNum)
+		_, err := utils.Run(imgCmd)
+		if err != nil {
+			log.Errorf("NodeExpandVolume: resize img file error %v", err)
+			return nil, fmt.Errorf("NodeExpandVolume: resize img file error, %v", err)
+		}
+		loopCmd := fmt.Sprintf("%s losetup | grep -v grep | grep %s | awk '{print $1}'", NsenterCmd, imgFile)
+		out, err := utils.Run(loopCmd)
+		if err != nil {
+			log.Errorf("NodeExpandVolume: search losetup device error %v", err)
+			return nil, fmt.Errorf("NodeExpandVolume: search losetup device error, %v", err)
+		}
+		loopDev := strings.TrimSpace(out)
+		loopResize := fmt.Sprintf("%s losetup -c %s", NsenterCmd, loopDev)
+		_, err = utils.Run(loopResize)
+		if err != nil {
+			log.Errorf("NodeExpandVolume: resize device error %v", err)
+			return nil, fmt.Errorf("NodeExpandVolume: resize device file error, %v", err)
+		}
+		resizeFs := fmt.Sprintf("%s resize2fs %s", NsenterCmd, loopDev)
+		_, err = utils.Run(resizeFs)
+		if err != nil {
+			log.Errorf("NodeExpandVolume: resize filesystem error %v", err)
+			return nil, fmt.Errorf("NodeExpandVolume: resize filesystem error, %v", err)
+		}
+		log.Infof("NodeExpandVolume, losetup volume expand successful %s to %d B", req.VolumeId, volSizeBytes)
+	} else {
+		log.Infof("NodeExpandVolume, normal nas pv type for volume %s", req.VolumeId)
+	}
+	return &csi.NodeExpandVolumeResponse{}, nil
 }
 
 // NodeGetCapabilities node get capability
@@ -323,11 +382,18 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 			},
 		},
 	}
+	nscap2 := &csi.NodeServiceCapability{
+		Type: &csi.NodeServiceCapability_Rpc{
+			Rpc: &csi.NodeServiceCapability_RPC{
+				Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+			},
+		},
+	}
 
 	// Nas Metric enable config
-	nodeSvcCap := []*csi.NodeServiceCapability{}
+	nodeSvcCap := []*csi.NodeServiceCapability{nscap2}
 	if GlobalConfigVar.MetricEnable {
-		nodeSvcCap = []*csi.NodeServiceCapability{nscap}
+		nodeSvcCap = []*csi.NodeServiceCapability{nscap, nscap2}
 	}
 
 	return &csi.NodeGetCapabilitiesResponse{

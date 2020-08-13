@@ -334,6 +334,15 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		}
 		os.Chmod(fullPath, 0777)
 
+		volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
+		if value, ok := req.Parameters["mountType"]; ok && value == "losetup" {
+			if err = createLosetupPv(pvName, fullPath, volSizeBytes); err != nil {
+				log.Errorf("Provision: create losetup image file error: %v", err)
+				return nil, errors.New("Provision: " + req.Name + ", create losetup image file with error: " + err.Error())
+			}
+			volumeContext["mountType"] = "losetup"
+		}
+
 		// step7: Unmount nfs server
 		if err := utils.Umount(mountPoint); err != nil {
 			log.Errorf("Provision: %s, unmount nfs mountpoint %s failed with error %v", req.Name, mountPoint, err)
@@ -354,7 +363,6 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 			volumeContext["options"] = value
 		}
 
-		volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
 		csiTargetVol = &csi.Volume{
 			VolumeId:      req.Name,
 			CapacityBytes: int64(volSizeBytes),
@@ -732,5 +740,6 @@ func (cs *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteS
 func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest,
 ) (*csi.ControllerExpandVolumeResponse, error) {
 	log.Infof("ControllerExpandVolume is called, do nothing now")
-	return &csi.ControllerExpandVolumeResponse{}, nil
+	volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: volSizeBytes, NodeExpansionRequired: true}, nil
 }
