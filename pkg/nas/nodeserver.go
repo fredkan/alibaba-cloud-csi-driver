@@ -44,13 +44,14 @@ type nodeServer struct {
 
 // Options struct definition
 type Options struct {
-	Server   string `json:"server"`
-	Path     string `json:"path"`
-	Vers     string `json:"vers"`
-	Mode     string `json:"mode"`
-	ModeType string `json:"modeType"`
+	Server    string `json:"server"`
+	Path      string `json:"path"`
+	Vers      string `json:"vers"`
+	Mode      string `json:"mode"`
+	ModeType  string `json:"modeType"`
 	MountType string `json:"mountType"`
-	Options  string `json:"options"`
+	Options   string `json:"options"`
+	LoopLock  string `json:"loopLock"`
 }
 
 // RunvNasOptions struct definition
@@ -105,6 +106,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	mountPath := req.GetTargetPath()
 	opt := &Options{}
 	for key, value := range req.VolumeContext {
+		key = strings.ToLower(key)
 		if key == "server" {
 			opt.Server = value
 		} else if key == "path" {
@@ -115,11 +117,16 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			opt.Mode = value
 		} else if key == "options" {
 			opt.Options = value
-		} else if key == "modeType" {
+		} else if key == "modetype" {
 			opt.ModeType = value
-		} else if key == "mountType" {
+		} else if key == "mounttype" {
 			opt.MountType = value
+		} else if key == "looplock" {
+			opt.LoopLock = value
 		}
+	}
+	if opt.LoopLock != "false" {
+		opt.LoopLock = "true"
 	}
 
 	// version/options used first in mountOptions
@@ -335,11 +342,11 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 	}
 	podID := pathList[5]
 	pvName := pathList[8]
-	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
-	imgFile := filepath.Join(nfsPath, pvName + ".img")
+	nfsPath := filepath.Join(NasMntPoint, podID, pvName)
+	imgFile := filepath.Join(nfsPath, pvName+".img")
 	if utils.IsFileExisting(imgFile) {
 		volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
-		blockNum := volSizeBytes/(4*1024)
+		blockNum := volSizeBytes / (4 * 1024)
 		imgCmd := fmt.Sprintf("dd if=/dev/zero of=%s bs=4k seek=%d count=0", imgFile, blockNum)
 		_, err := utils.Run(imgCmd)
 		if err != nil {

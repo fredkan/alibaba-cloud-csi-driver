@@ -396,7 +396,7 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, nfsPath, volumeID)
 
 	lockFile := filepath.Join(nfsPath, pvName+".lck")
-	if utils.IsFileExisting(lockFile) {
+	if opt.LoopLock == "true" && utils.IsFileExisting(lockFile) {
 		return fmt.Errorf("nfs losetup file is used by others %s", lockFile)
 	}
 	imgFile := filepath.Join(nfsPath, pvName + ".img")
