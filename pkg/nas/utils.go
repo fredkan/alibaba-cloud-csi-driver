@@ -40,6 +40,10 @@ const (
 	RegionTag = "region-id"
 	// NsenterCmd is nsenter mount command
 	NsenterCmd = "/nsenter --mount=/proc/1/ns/mnt"
+	// LoopLockFile lock file for nas loopsetup
+	LoopLockFile = "loopsetup.nas.csi.alibabacloud.com.lck"
+	// LoopImgFile image file for nas loopsetup
+	LoopImgFile = "loopsetup.nas.csi.alibabacloud.com.img"
 )
 
 var (
@@ -362,8 +366,8 @@ func ParseMountFlags(mntOptions []string) (string, string) {
 }
 
 func createLosetupPv(pvName, fullPath string, volSizeBytes int64) error {
-	blockNum := volSizeBytes/(4*1024)
-	fileName := filepath.Join(fullPath, pvName+".img")
+	blockNum := volSizeBytes / (4 * 1024)
+	fileName := filepath.Join(fullPath, LoopImgFile)
 	imgCmd := fmt.Sprintf("dd if=/dev/zero of=%s bs=4k seek=%d count=0", fileName, blockNum)
 	_, err := utils.Run(imgCmd)
 	if err != nil {
@@ -389,17 +393,17 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	podID := pathList[5]
 	pvName := pathList[8]
 
-	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
+	nfsPath := filepath.Join(NasMntPoint, podID, pvName)
 	if err := utils.CreateDest(nfsPath); err != nil {
 		return fmt.Errorf("Create nfs mountPath error %s ", err.Error())
 	}
 	DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, nfsPath, volumeID)
 
-	lockFile := filepath.Join(nfsPath, pvName+".lck")
+	lockFile := filepath.Join(nfsPath, LoopLockFile)
 	if opt.LoopLock == "true" && utils.IsFileExisting(lockFile) {
 		return fmt.Errorf("nfs losetup file is used by others %s", lockFile)
 	}
-	imgFile := filepath.Join(nfsPath, pvName + ".img")
+	imgFile := filepath.Join(nfsPath, LoopImgFile)
 	mountCmd := fmt.Sprintf("%s mount -o loop %s %s", NsenterCmd, imgFile, mountPoint)
 	_, err := utils.Run(mountCmd)
 	if err != nil {
@@ -418,9 +422,9 @@ func checkLosetupUnmount(mountPoint string) error {
 	}
 	podID := pathList[5]
 	pvName := pathList[8]
-	nfsPath:= filepath.Join(NasMntPoint, podID, pvName)
-	imgFile := filepath.Join(nfsPath, pvName + ".img")
-	lockFile := filepath.Join(nfsPath, pvName+".lck")
+	nfsPath := filepath.Join(NasMntPoint, podID, pvName)
+	imgFile := filepath.Join(nfsPath, LoopImgFile)
+	lockFile := filepath.Join(nfsPath, LoopLockFile)
 	if utils.IsFileExisting(imgFile) {
 		if err := os.Remove(lockFile); err != nil {
 			return fmt.Errorf("checkLosetupUnmount: remove lock file error %v", err)

@@ -343,7 +343,7 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 	podID := pathList[5]
 	pvName := pathList[8]
 	nfsPath := filepath.Join(NasMntPoint, podID, pvName)
-	imgFile := filepath.Join(nfsPath, pvName+".img")
+	imgFile := filepath.Join(nfsPath, LoopImgFile)
 	if utils.IsFileExisting(imgFile) {
 		volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
 		blockNum := volSizeBytes / (4 * 1024)
