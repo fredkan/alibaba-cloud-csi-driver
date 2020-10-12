@@ -317,30 +317,38 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 			}
 		}
 
-		// step5: Mount nfs server to localpath
-		if !CheckNfsPathMounted(mountPoint, nfsServer, nfsPath) {
-			if err := DoNfsMount(nfsServer, nfsPath, nfsVersion, nfsOptionsStr, mountPoint, req.Name); err != nil {
-				log.Errorf("CreateVolume: %s, Mount server: %s, nfsPath: %s, nfsVersion: %s, nfsOptions: %s, mountPoint: %s, with error: %s", req.Name, nfsServer, nfsPath, nfsVersion, nfsOptionsStr, mountPoint, err.Error())
-				return nil, errors.New("CreateVolume: " + req.Name + ", Mount server: " + nfsServer + ", nfsPath: " + nfsPath + ", nfsVersion: " + nfsVersion + ", nfsOptions: " + nfsOptionsStr + ", mountPoint: " + mountPoint + ", with error: " + err.Error())
+		if value, ok := req.GetParameters()["securityContext"]; !ok || value != "true" {
+			// step5: Mount nfs server to localpath
+			if !CheckNfsPathMounted(mountPoint, nfsServer, nfsPath) {
+				if err := DoNfsMount(nfsServer, nfsPath, nfsVersion, nfsOptionsStr, mountPoint, req.Name, nil); err != nil {
+					log.Errorf("CreateVolume: %s, Mount server: %s, nfsPath: %s, nfsVersion: %s, nfsOptions: %s, mountPoint: %s, with error: %s", req.Name, nfsServer, nfsPath, nfsVersion, nfsOptionsStr, mountPoint, err.Error())
+					return nil, errors.New("CreateVolume: " + req.Name + ", Mount server: " + nfsServer + ", nfsPath: " + nfsPath + ", nfsVersion: " + nfsVersion + ", nfsOptions: " + nfsOptionsStr + ", mountPoint: " + mountPoint + ", with error: " + err.Error())
+				}
 			}
-		}
-		if !CheckNfsPathMounted(mountPoint, nfsServer, nfsPath) {
-			return nil, errors.New("Check Mount nfsserver not mounted " + nfsServer)
-		}
 
-		// step6: create volume
-		fullPath := filepath.Join(mountPoint, pvName)
-		if err := os.MkdirAll(fullPath, 0777); err != nil {
-			log.Errorf("Provision: %s, creating path: %s, with error: %s", req.Name, fullPath, err.Error())
-			return nil, errors.New("Provision: " + req.Name + ", creating path: " + fullPath + ", with error: " + err.Error())
-		}
-		os.Chmod(fullPath, 0777)
+			if !CheckNfsPathMounted(mountPoint, nfsServer, nfsPath) {
+				return nil, errors.New("Check Mount nfsserver not mounted " + nfsServer)
+			}
 
-		// step7: Unmount nfs server
-		if err := utils.Umount(mountPoint); err != nil {
-			log.Errorf("Provision: %s, unmount nfs mountpoint %s failed with error %v", req.Name, mountPoint, err)
-			return nil, errors.New("unable to unmount nfs server: " + nfsServer)
+			// step6: create volume
+			fullPath := filepath.Join(mountPoint, pvName)
+			if err := os.MkdirAll(fullPath, 0777); err != nil {
+				log.Errorf("Provision: %s, creating path: %s, with error: %s", req.Name, fullPath, err.Error())
+				return nil, errors.New("Provision: " + req.Name + ", creating path: " + fullPath + ", with error: " + err.Error())
+			}
+			os.Chmod(fullPath, 0777)
+
+			// step7: Unmount nfs server
+			if err := utils.Umount(mountPoint); err != nil {
+				log.Errorf("Provision: %s, unmount nfs mountpoint %s failed with error %v", req.Name, mountPoint, err)
+				return nil, errors.New("unable to unmount nfs server: " + nfsServer)
+			}
+		} else {
+			volumeContext["securityContext"] = "true"
 		}
+                if value, ok := req.GetParameters()["volumeCapacity"]; ok && value == "true" {
+                        volumeContext["volumeCapacity"] = "true"
+                }
 
 		volumeContext["volumeAs"] = nasVol.VolumeAs
 		volumeContext["server"] = nfsServer
@@ -502,7 +510,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 		// set the local mountpoint
 		mountPoint := filepath.Join(MNTROOTPATH, req.VolumeId+"-delete")
-		if err := DoNfsMount(nfsServer, nfsPath, nfsVersion, nfsOptions, mountPoint, req.VolumeId); err != nil {
+		if err := DoNfsMount(nfsServer, nfsPath, nfsVersion, nfsOptions, mountPoint, req.VolumeId, nil); err != nil {
 			log.Errorf("DeleteVolume: %s, Mount server: %s, nfsPath: %s, nfsVersion: %s, nfsOptions: %s, mountPoint: %s, with error: %s", req.VolumeId, nfsServer, nfsPath, nfsVersion, nfsOptions, mountPoint, err.Error())
 			return nil, fmt.Errorf("DeleteVolume: %s, Mount server: %s, nfsPath: %s, nfsVersion: %s, nfsOptions: %s, mountPoint: %s, with error: %s", req.VolumeId, nfsServer, nfsPath, nfsVersion, nfsOptions, mountPoint, err.Error())
 		}
@@ -735,6 +743,7 @@ func (cs *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteS
 
 func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest,
 ) (*csi.ControllerExpandVolumeResponse, error) {
+	volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
 	log.Infof("ControllerExpandVolume is called, do nothing now")
-	return &csi.ControllerExpandVolumeResponse{}, nil
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: volSizeBytes, NodeExpansionRequired: true}, nil
 }

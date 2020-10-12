@@ -23,6 +23,7 @@ import (
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	aliNas "github.com/aliyun/alibaba-cloud-sdk-go/services/nas"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
@@ -50,6 +51,8 @@ type GlobalConfig struct {
 	ADControllerEnable bool
 	MetricEnable       bool
 	RunTimeClass       string
+	KubeClient 		 *kubernetes.Clientset
+	NasClient        *aliNas.Client
 }
 
 // NAS the NAS object
@@ -79,6 +82,7 @@ func NewDriver(nodeID, endpoint string) *NAS {
 	csiDriver.AddControllerServiceCapabilities([]csi.ControllerServiceCapability_RPC_Type{
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
+		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 	})
 
 	// Global Configs Set
@@ -92,6 +96,7 @@ func NewDriver(nodeID, endpoint string) *NAS {
 		region = GetMetaData(RegionTag)
 	}
 	d.controllerServer = NewControllerServer(d.driver, c, region)
+
 
 	return d
 }
@@ -154,5 +159,5 @@ func GlobalConfigSet() {
 
 	GlobalConfigVar.MetricEnable = isNasMetricEnable
 	GlobalConfigVar.RunTimeClass = runtimeValue
-
+	GlobalConfigVar.KubeClient = kubeClient
 }

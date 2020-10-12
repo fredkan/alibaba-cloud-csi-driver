@@ -17,16 +17,23 @@ limitations under the License.
 package nas
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"context"
 	"sync"
+	"syscall"
 	"time"
+	"k8s.io/api/core/v1"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	aliyunep "github.com/aliyun/alibaba-cloud-sdk-go/sdk/endpoints"
 	aliNas "github.com/aliyun/alibaba-cloud-sdk-go/services/nas"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
@@ -60,7 +67,7 @@ type RoleAuth struct {
 }
 
 //DoNfsMount execute the mount command for nas dir
-func DoNfsMount(nfsServer, nfsPath, nfsVers, mountOptions, mountPoint, volumeID string) error {
+func DoNfsMount(nfsServer, nfsPath, nfsVers, mountOptions, mountPoint, volumeID string, opt *Options) error {
 	if !utils.IsFileExisting(mountPoint) {
 		CreateDest(mountPoint)
 	}
@@ -71,7 +78,7 @@ func DoNfsMount(nfsServer, nfsPath, nfsVers, mountOptions, mountPoint, volumeID 
 	_, err := utils.Run(mntCmd)
 	if err != nil && nfsPath != "/" {
 		if strings.Contains(err.Error(), "reason given by server: No such file or directory") || strings.Contains(err.Error(), "access denied by server while mounting") {
-			if err := createNasSubDir(nfsServer, nfsPath, nfsVers, mountOptions, volumeID); err != nil {
+			if err := createNasSubDir(nfsServer, nfsPath, nfsVers, mountOptions, volumeID, opt); err != nil {
 				log.Errorf("DoNfsMount: Create SubPath error: %s", err.Error())
 				return err
 			}
@@ -84,6 +91,27 @@ func DoNfsMount(nfsServer, nfsPath, nfsVers, mountOptions, mountPoint, volumeID 
 		}
 	} else if err != nil {
 		return err
+	}
+	if opt != nil && opt.SecurityContext == "true" {
+		uid, gid := getPodSecurityContext(opt.PodName, opt.PodNameSpace)
+		if uid != -1 && gid != -1 {
+			pathInfo, err := os.Stat(mountPoint)
+			if err != nil {
+				return err
+			}
+			pathUid, pathGid := -1, -1
+			if stat, ok := pathInfo.Sys().(*syscall.Stat_t); ok {
+				pathUid = int(stat.Uid)
+				pathGid = int(stat.Gid)
+			}
+			if pathUid != uid || pathGid != gid {
+				utils.Umount(mountPoint)
+				errMsg := fmt.Sprintf("Pod uid(%d)/gid(%d) not same as mountpoint, mount is not allowed", uid, gid)
+				return errors.New(errMsg)
+			}
+		} else {
+			return errors.New("uid/pid get err")
+		}
 	}
 	log.Infof("DoNfsMount: mount nfs successful with command: %s", mntCmd)
 	return nil
@@ -234,7 +262,7 @@ func waitTimeout(wg *sync.WaitGroup, timeout int) bool {
 
 }
 
-func createNasSubDir(nfsServer, nfsPath, nfsVers, nfsOptions string, volumeID string) error {
+func createNasSubDir(nfsServer, nfsPath, nfsVers, nfsOptions string, volumeID string, opt *Options) error {
 	// step 1: create mount path
 	nasTmpPath := filepath.Join(NasTempMntPath, volumeID)
 	if err := utils.CreateDest(nasTmpPath); err != nil {
@@ -279,11 +307,66 @@ func createNasSubDir(nfsServer, nfsPath, nfsVers, nfsOptions string, volumeID st
 		log.Infof("Nas, Create Sub Directory err: " + err.Error())
 		return err
 	}
+	if opt != nil {
+		if opt.SecurityContext == "true" {
+			uid, gid := getPodSecurityContext(opt.PodName, opt.PodNameSpace)
+			if uid!= -1 && gid != -1 {
+				os.Chown(subPath, uid, gid)
+			}
+		}
+		if opt.VolumeCapacity == "true" {
+			pvObj, err := getPvObj(volumeID)
+			if err != nil {
+				return err
+			}
+			pvSizeGB := pvObj.Spec.Capacity.Storage().Value() / (1024 * 1024 * 1024)
+			nasClient := updateNasClient(GlobalConfigVar.NasClient, GetMetaData(RegionTag))
+			log.Infof("EEEEEEE", GetMetaData(RegionTag))
+			fsList := strings.Split(opt.Server, "-")
+			if len(fsList) < 1 {
+				return errors.New("error nas endpoint")
+			}
+			fsID := fsList[0]
+			quotaRequest := aliNas.CreateSetDirQuotaRequest()
+			quotaRequest.FileSystemId = fsID
+			quotaRequest.Path = usePath
+			quotaRequest.UserType = "AllUsers"
+			quotaRequest.QuotaType = "Enforcement"
+			pvSizeGBStr:=strconv.FormatInt(pvSizeGB,10)
+			quotaRequest.SizeLimit = requests.Integer(pvSizeGBStr)
+			quotaRequest.RegionId = GetMetaData(RegionTag)
+			log.Infof("DDDDDDD", quotaRequest, pvSizeGB)
+			_, err = nasClient.SetDirQuota(quotaRequest)
+			if err != nil {
+				log.Errorf("error nas set quota %s", err.Error())
+				return errors.New("error nas set quota")
+			}
+		}
+	}
+
 
 	// step 3: umount after create
 	utils.Umount(nasTmpPath)
 	log.Infof("Create Sub Directory successful: %s", nfsPath)
 	return nil
+}
+
+func getPvObj(volumeID string) (*v1.PersistentVolume, error) {
+	return GlobalConfigVar.KubeClient.CoreV1().PersistentVolumes().Get(context.Background(), volumeID, metav1.GetOptions{})
+}
+
+func getPodSecurityContext(podName, podNameSpace string) (int, int) {
+	podInfo, err := GlobalConfigVar.KubeClient.CoreV1().Pods(podNameSpace).Get(context.Background(), podName, metav1.GetOptions{})
+
+	if err != nil {
+		return -1, -1
+	}
+
+	if podInfo.Spec.SecurityContext != nil {
+		return int(*(podInfo.Spec.SecurityContext.RunAsUser)), int(*(podInfo.Spec.SecurityContext.RunAsGroup))
+	}
+
+	return -1, -1
 }
 
 // check system config,

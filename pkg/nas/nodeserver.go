@@ -23,10 +23,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	aliNas "github.com/aliyun/alibaba-cloud-sdk-go/services/nas"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
@@ -44,12 +47,16 @@ type nodeServer struct {
 
 // Options struct definition
 type Options struct {
-	Server   string `json:"server"`
-	Path     string `json:"path"`
-	Vers     string `json:"vers"`
-	Mode     string `json:"mode"`
-	ModeType string `json:"modeType"`
-	Options  string `json:"options"`
+	Server          string `json:"server"`
+	Path            string `json:"path"`
+	Vers            string `json:"vers"`
+	Mode            string `json:"mode"`
+	ModeType        string `json:"modeType"`
+	Options         string `json:"options"`
+	PodName         string `json:"csi.storage.k8s.io/pod.name"`
+	PodNameSpace    string `json:"csi.storage.k8s.io/pod.namespace"`
+	SecurityContext string `json:"securityContext"`
+	VolumeCapacity  string `json:"volumeCapacity"`
 }
 
 // RunvNasOptions struct definition
@@ -76,6 +83,10 @@ const (
 	MixRunTimeMode = "runc-runv"
 	// RunvRunTimeMode tag
 	RunvRunTimeMode = "runv"
+	PodName         = "csi.storage.k8s.io/pod.name"
+	PodNameSpace    = "csi.storage.k8s.io/pod.namespace"
+	SecurityContext = "securityContext"
+	VolumeCapacity  = "volumeCapacity"
 )
 
 //newNodeServer create the csi node server
@@ -114,6 +125,14 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			opt.Options = value
 		} else if key == "modeType" {
 			opt.ModeType = value
+		} else if key == PodName {
+			opt.PodName = value
+		} else if key == PodNameSpace {
+			opt.PodNameSpace = value
+		} else if key == SecurityContext {
+			opt.SecurityContext = value
+		} else if key == VolumeCapacity {
+			opt.VolumeCapacity = value
 		}
 	}
 
@@ -230,9 +249,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	// Do mount
-	if err := DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, mountPath, req.VolumeId); err != nil {
+	if err := DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, mountPath, req.VolumeId, opt); err != nil {
 		log.Errorf("Nas, Mount Nfs error: %s", err.Error())
-		return nil, errors.New("Nas, Mount Nfs error: %s" + err.Error())
+		return nil, errors.New("Nas, Mount Nfs error: " + err.Error())
 	}
 
 	// change the mode
@@ -310,7 +329,59 @@ func (ns *nodeServer) NodeUnstageVolume(
 
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (
 	*csi.NodeExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	log.Infof("NodeExpandVolume: nas node expand volume: %v", req)
+	volumeID := req.VolumeId
+	targetPath := req.VolumePath
+	expectSize := req.CapacityRange.RequiredBytes
+	expectSizeGB := req.CapacityRange.RequiredBytes / (1024 * 1024 * 1024)
+
+	if err := ns.resizeNasVolume(ctx, expectSizeGB, volumeID, targetPath); err != nil {
+		log.Errorf("NodePublishVolume: Resize volume %s with error: %s", volumeID, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	log.Infof("NodeExpandVolume: Successful expand Nas volume: %v to %d", req.VolumeId, expectSize)
+	return &csi.NodeExpandVolumeResponse{}, nil
+}
+
+func (ns *nodeServer) resizeNasVolume(ctx context.Context, expectSizeGB int64, volumeID, targetPath string) error {
+	nasClient := updateNasClient(GlobalConfigVar.NasClient, GetMetaData(RegionTag))
+	log.Infof("EEEEEEE", GetMetaData(RegionTag))
+
+	pvObj, err := getPvObj(volumeID)
+	if err != nil {
+		return err
+	}
+	if pvObj.Spec.CSI == nil {
+		return errors.New("CSI empty")
+	}
+	if _, ok := pvObj.Spec.CSI.VolumeAttributes["server"]; !ok {
+		return errors.New("Pv object no server")
+	}
+	if _, ok := pvObj.Spec.CSI.VolumeAttributes["path"]; !ok {
+		return errors.New("Pv object no path")
+	}
+
+	fsList := strings.Split(pvObj.Spec.CSI.VolumeAttributes["server"], "-")
+	if len(fsList) < 1 {
+		return errors.New("error nas endpoint")
+	}
+	fsID := fsList[0]
+	quotaRequest := aliNas.CreateSetDirQuotaRequest()
+	quotaRequest.FileSystemId = fsID
+	quotaRequest.Path = pvObj.Spec.CSI.VolumeAttributes["path"]
+	quotaRequest.UserType = "AllUsers"
+	quotaRequest.QuotaType = "Enforcement"
+	expectSizeGBStr:=strconv.FormatInt(expectSizeGB,10)
+	quotaRequest.SizeLimit = requests.Integer(expectSizeGBStr)
+	quotaRequest.RegionId = GetMetaData(RegionTag)
+	log.Infof("DDDDDDD", quotaRequest, expectSizeGB)
+	_, err = nasClient.SetDirQuota(quotaRequest)
+	if err != nil {
+		log.Errorf("error nas set quota %s", err.Error())
+		return errors.New("error nas set quota")
+	}
+	return nil
 }
 
 // NodeGetCapabilities node get capability
@@ -323,11 +394,18 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 			},
 		},
 	}
+	nscap2 := &csi.NodeServiceCapability{
+		Type: &csi.NodeServiceCapability_Rpc{
+			Rpc: &csi.NodeServiceCapability_RPC{
+				Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+			},
+		},
+	}
 
 	// Nas Metric enable config
-	nodeSvcCap := []*csi.NodeServiceCapability{}
+	nodeSvcCap := []*csi.NodeServiceCapability{nscap2}
 	if GlobalConfigVar.MetricEnable {
-		nodeSvcCap = []*csi.NodeServiceCapability{nscap}
+		nodeSvcCap = []*csi.NodeServiceCapability{nscap, nscap2}
 	}
 
 	return &csi.NodeGetCapabilitiesResponse{
