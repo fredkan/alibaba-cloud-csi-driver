@@ -19,6 +19,7 @@ package nas
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -400,7 +401,7 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, nfsPath, volumeID)
 
 	lockFile := filepath.Join(nfsPath, LoopLockFile)
-	if opt.LoopLock == "true" && utils.IsFileExisting(lockFile) {
+	if opt.LoopLock == "true" && isLosetupUsed(lockFile, opt) {
 		return fmt.Errorf("nfs losetup file is used by others %s", lockFile)
 	}
 	imgFile := filepath.Join(nfsPath, LoopImgFile)
@@ -409,10 +410,42 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	if err != nil {
 		return fmt.Errorf("Mount nfs losetup error %s", err.Error())
 	}
-	if err := ioutil.WriteFile(lockFile, ([]byte)(pvName), 0644); err != nil {
+	lockContent := GlobalConfigVar.NodeID + ":" + GlobalConfigVar.NodeIP
+	if err := ioutil.WriteFile(lockFile, ([]byte)(lockContent), 0644); err != nil {
 		return err
 	}
 	return nil
+}
+
+func isLosetupUsed(lockFile string, opt *Options) bool {
+	if !utils.IsFileExisting(lockFile) {
+		return false
+	}
+	fileCotent := utils.GetFileContent(lockFile)
+	contentParts := strings.Split(fileCotent, ":")
+	if len(contentParts) != 2 || contentParts[0] == "" || contentParts[1] == "" {
+		return true
+	}
+
+	oldNodeID := contentParts[0]
+	oldNodeIP := contentParts[1]
+	if GlobalConfigVar.NodeID == oldNodeID {
+		nasServer := opt.Server + ":" + opt.Path + " on"
+		if utils.IsMounted(nasServer) {
+			return true
+		}
+		log.Warnf("Lockfile(%s) exist, but target server not mounted %s.", lockFile, nasServer)
+		return false
+	}
+
+	// check network connection
+	conn, err := net.DialTimeout("tcp", oldNodeIP+":10255", time.Second*time.Duration(3))
+	if err != nil {
+		log.Warnf("Cannot connect to node %s, consider the node as shutdown(%s).", oldNodeIP, lockFile)
+		return false
+	}
+	defer conn.Close()
+	return true
 }
 
 func checkLosetupUnmount(mountPoint string) error {
