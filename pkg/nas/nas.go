@@ -155,6 +155,7 @@ func GlobalConfigSet(nodeID string) {
 	}
 	for _, address := range nodeInfo.Status.Addresses {
 		if address.Type == "InternalIP" {
+			log.Infof("Node InternalIP is: %s", address.Address)
 			GlobalConfigVar.NodeIP = address.Address
 		}
 	}
@@ -170,5 +171,5 @@ func GlobalConfigSet(nodeID string) {
 	}
 	GlobalConfigVar.MetricEnable = isNasMetricEnable
 	GlobalConfigVar.RunTimeClass = runtimeValue
-	GlobalConfigVar.NodeID = nodeID
+	GlobalConfigVar.NodeID = nodeName
 }
