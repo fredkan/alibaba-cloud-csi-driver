@@ -401,7 +401,7 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	DoNfsMount(opt.Server, opt.Path, opt.Vers, opt.Options, nfsPath, volumeID)
 
 	lockFile := filepath.Join(nfsPath, LoopLockFile)
-	if opt.LoopLock == "true" && isLosetupUsed(lockFile, opt) {
+	if opt.LoopLock == "true" && isLosetupUsed(lockFile, opt, volumeID) {
 		return fmt.Errorf("nfs losetup file is used by others %s", lockFile)
 	}
 	imgFile := filepath.Join(nfsPath, LoopImgFile)
@@ -417,7 +417,7 @@ func mountLosetupPv(mountPoint string, opt *Options, volumeID string) error {
 	return nil
 }
 
-func isLosetupUsed(lockFile string, opt *Options) bool {
+func isLosetupUsed(lockFile string, opt *Options, volumeID string) bool {
 	if !utils.IsFileExisting(lockFile) {
 		return false
 	}
@@ -430,12 +430,12 @@ func isLosetupUsed(lockFile string, opt *Options) bool {
 	oldNodeID := contentParts[0]
 	oldNodeIP := contentParts[1]
 	if GlobalConfigVar.NodeID == oldNodeID {
-		nasServer := opt.Server + ":" + opt.Path + " on"
-		if utils.IsMounted(nasServer) {
-			return true
+		if !isLosetupMount(volumeID) {
+			log.Warnf("Lockfile(%s) exist, but Losetup image not mounted %s.", lockFile, opt.Path)
+			return false
 		}
-		log.Warnf("Lockfile(%s) exist, but target server not mounted %s.", lockFile, nasServer)
-		return false
+		log.Warnf("Lockfile(%s) exist, but Losetup image mounted %s.", lockFile, opt.Path)
+		return true
 	}
 
 	// check network connection
@@ -469,4 +469,18 @@ func checkLosetupUnmount(mountPoint string) error {
 	}
 	log.Infof("Losetup Unmount successful %s", mountPoint)
 	return nil
+}
+
+func isLosetupMount(volumeID string) bool {
+	keyWord := volumeID + "/" + LoopImgFile
+	cmd := fmt.Sprintf("mount | grep %s |grep -v grep |wc -l", keyWord)
+	out, err := utils.Run(cmd)
+	if err != nil {
+		log.Infof("isLosetupMount: exec error: %s, %s", cmd, err.Error())
+		return false
+  	}
+	if strings.TrimSpace(out) == "0" {
+		return false
+  	}
+	return true
 }
