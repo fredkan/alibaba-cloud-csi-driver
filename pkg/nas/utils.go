@@ -19,7 +19,6 @@ package nas
 import (
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -438,13 +437,11 @@ func isLosetupUsed(lockFile string, opt *Options, volumeID string) bool {
 		return true
 	}
 
-	// check network connection
-	conn, err := net.DialTimeout("tcp", oldNodeIP+":10255", time.Second*time.Duration(3))
-	if err != nil {
+	stat := utils.Ping(oldNodeIP)
+	if stat.PacketLoss == 100 {
 		log.Warnf("Cannot connect to node %s, consider the node as shutdown(%s).", oldNodeIP, lockFile)
 		return false
 	}
-	defer conn.Close()
 	return true
 }
 
@@ -478,9 +475,9 @@ func isLosetupMount(volumeID string) bool {
 	if err != nil {
 		log.Infof("isLosetupMount: exec error: %s, %s", cmd, err.Error())
 		return false
-  	}
+	}
 	if strings.TrimSpace(out) == "0" {
 		return false
-  	}
+	}
 	return true
 }

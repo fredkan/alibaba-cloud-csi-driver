@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/go-ping/ping"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -438,4 +439,17 @@ func IsMountPointRunv(mountPoint string) bool {
 		}
 	}
 	return false
+}
+
+func Ping(ipAddress string) *ping.Statistics {
+	pinger, err := ping.NewPinger(ipAddress)
+	if err != nil {
+		panic(err)
+	}
+	pinger.SetPrivileged(true)
+	pinger.Count = 1
+	pinger.Timeout = time.Second * 2
+	pinger.Run()
+	stats := pinger.Statistics()
+	return stats
 }
