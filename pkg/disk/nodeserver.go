@@ -149,6 +149,9 @@ func NewNodeServer(d *csicommon.CSIDriver, c *ecs.Client) csi.NodeServer {
 		log.Infof("Currently node is NOT VF model")
 	}
 
+	// Start query server
+	go QueryServerStart()
+
 	return &nodeServer{
 		zone:              doc.ZoneID,
 		maxVolumesPerNode: maxVolumesNum,

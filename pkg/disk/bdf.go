@@ -343,6 +343,34 @@ func forceDetachAllowed(disk *ecs.Disk, nodeID string) (allowed bool, err error)
 		}
 	}
 	if !bdfTagExist {
+		diskIDs := []string{disk.DiskId}
+		ipAddr, err := GetInstanceIP(disk.InstanceId)
+		if err != nil {
+			log.Warnf("forceDetachAllowed: GetInstanceIP error: %s, disk: %s", err.Error(), diskIDs)
+			return false, err
+		}
+		bdfInfoResponse, err := bdfInfoQuery(ipAddr, diskIDs)
+		if err != nil {
+			log.Warnf("forceDetachAllowed: bdfInfoQuery error: %s disk: %s", err.Error(), diskIDs)
+			return false, err
+		}
+		if len(bdfInfoResponse) == 1 {
+			if bdfInfoResponse[0].Error == "ignore" {
+				return true, nil
+			}
+			if bdfInfoResponse[0].Error != "" {
+				return false, errors.New("Check DiskID BDF bind with error " + bdfInfoResponse[0].Error)
+			}
+			if bdfInfoResponse[0].Device != "" {
+				msg := fmt.Sprintf("forceDetachAllowed: DiskID %s is bind on %s, on ecs: %s", disk.DiskId, bdfInfoResponse[0].Device, disk.InstanceId)
+				log.Errorf(msg)
+				return false, errors.New(msg)
+			}
+		} else {
+			msg := fmt.Sprintf("DiskID BDF bind check with error response %v", bdfInfoResponse)
+			log.Errorf(msg)
+			return false, errors.New(msg)
+		}
 		return true, nil
 	}
 
