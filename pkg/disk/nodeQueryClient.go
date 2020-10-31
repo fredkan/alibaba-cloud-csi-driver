@@ -50,24 +50,24 @@ func bdfInfoQuery(nodeIP string, diskIDs []string) ([]BdfInfo, error) {
 	return bdfInfoResponse, nil
 }
 
-func GetInstanceIP(instanceID string) (string, error) {
+func GetInstanceObject(instanceID string) (string, *ecs.DescribeInstancesResponse, error) {
 	request := ecs.CreateDescribeInstancesRequest()
 	request.RegionId = GlobalConfigVar.Region
 	request.InstanceIds = "[\"" + instanceID + "\"]"
 
 	response, err := GlobalConfigVar.EcsClient.DescribeInstances(request)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(response.Instances.Instance) != 1 {
-		return "", errors.New("Get Instance with error response: " + response.RequestId)
+		return "", response, errors.New("Get Instance with error response: " + response.RequestId)
 	}
 	instance := response.Instances.Instance[0]
 	for _, ipadd := range instance.VpcAttributes.PrivateIpAddress.IpAddress {
-		return ipadd, nil
+		return ipadd, response, nil
 	}
 	for _, ipadd := range instance.InnerIpAddress.IpAddress {
-		return ipadd, nil
+		return ipadd, response, nil
 	}
-	return "", errors.New("Net InnerIpAddress found ")
+	return "", response, errors.New("Net InnerIpAddress found ")
 }

@@ -342,11 +342,13 @@ func forceDetachAllowed(disk *ecs.Disk, nodeID string) (allowed bool, err error)
 			bdfTagExist = true
 		}
 	}
+	instanceResponse := &ecs.DescribeInstancesResponse{}
 	if !bdfTagExist {
 		diskIDs := []string{disk.DiskId}
-		ipAddr, err := GetInstanceIP(disk.InstanceId)
+		ipAddr := ""
+		ipAddr, instanceResponse, err = GetInstanceObject(disk.InstanceId)
 		if err != nil {
-			log.Warnf("forceDetachAllowed: GetInstanceIP error: %s, disk: %s", err.Error(), diskIDs)
+			log.Warnf("forceDetachAllowed: GetInstanceObject error: %s, disk: %s", err.Error(), diskIDs)
 			return false, err
 		}
 		bdfInfoResponse, err := bdfInfoQuery(ipAddr, diskIDs)
@@ -374,13 +376,6 @@ func forceDetachAllowed(disk *ecs.Disk, nodeID string) (allowed bool, err error)
 		return true, nil
 	}
 
-	request := ecs.CreateDescribeInstancesRequest()
-	request.RegionId = disk.RegionId
-	request.InstanceIds = "[\"" + disk.InstanceId + "\"]"
-	instanceResponse, err := GlobalConfigVar.EcsClient.DescribeInstances(request)
-	if err != nil {
-		return false, errors.Wrapf(err, "DescribeInstances, instanceId=%s", disk.InstanceId)
-	}
 	if len(instanceResponse.Instances.Instance) == 0 {
 		return false, errors.Errorf("Describe Instance with empty response: %s", disk.InstanceId)
 	}
