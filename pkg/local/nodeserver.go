@@ -23,7 +23,7 @@ import (
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/kubernetes-csi/drivers/pkg/csi-common"
+	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/generator"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/manager"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/server"
@@ -33,7 +33,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"

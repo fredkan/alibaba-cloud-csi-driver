@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/manager"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
@@ -11,16 +15,13 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/kubernetes/pkg/util/resizefs"
 	utilexec "k8s.io/utils/exec"
 	k8smount "k8s.io/utils/mount"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // include normal lvm & aep lvm type
@@ -59,6 +60,19 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 	// Create LVM if not exist
 	//volumeNewCreated := false
 	volumeID := req.GetVolumeId()
+	var isSnapshot bool = false
+	var isSnapshotReadOnly bool = false
+	if _, isSnapshot = req.VolumeContext[SnapshotTag]; isSnapshot {
+		if ro, exist := req.VolumeContext[SnapshotReadonlyTag]; exist && ro == "true" {
+			// if volume is ro snapshot, then mount snapshot lv
+			log.Infof("NodePublishVolume: volume %s is readonly snapshot, mount snapshot lv %s directly", volumeID, req.VolumeContext[SnapshotTag])
+			isSnapshotReadOnly = true
+			volumeID = req.VolumeContext[SnapshotTag]
+		} else {
+			log.Errorf("NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
+			return status.Errorf(codes.Unimplemented, "NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
+		}
+	}
 	devicePath := filepath.Join("/dev/", vgName, volumeID)
 	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
 		//volumeNewCreated = true
@@ -80,7 +94,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 	isMnt := utils.IsMounted(targetPath)
 	if !isMnt {
 		var options []string
-		if req.GetReadonly() {
+		if req.GetReadonly() || isSnapshotReadOnly {
 			options = append(options, "ro")
 		} else {
 			options = append(options, "rw")
@@ -96,7 +110,7 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 		log.Infof("NodePublishVolume:: mount successful devicePath: %s, targetPath: %s, options: %v", devicePath, targetPath, options)
 	}
 	// upgrade PV with NodeAffinity
-	if nodeAffinity == "true" {
+	if nodeAffinity == "true" && !isSnapshot {
 		oldPv, err := ns.client.CoreV1().PersistentVolumes().Get(context.Background(), volumeID, metav1.GetOptions{})
 		if err != nil {
 			log.Errorf("NodePublishVolume: Get Persistent Volume(%s) Error: %s", volumeID, err.Error())
@@ -424,8 +438,8 @@ func (ns *nodeServer) checkPmemNameSpaceResize(volumeID, targetPath string) erro
 func createVolume(ctx context.Context, volumeID, vgName, pvType, lvmType string) error {
 	pvSize, unit, _ := getPvInfo(volumeID)
 	if pvSize == 0 {
-		log.Errorf("createVolume: Volume: %s, VG: %s, parse pv Size zero", volumeID, vgName)
-		return status.Error(codes.Internal, "parse pv Size zero")
+		log.Errorf("createVolume: Volume: %s, VG: %s, parse pv Size zero or snapshot lv is deleted", volumeID, vgName)
+		return status.Errorf(codes.Internal, "createVolume: Volume: %s, VG: %s, parse pv Size zero or snapshot lv is deleted", volumeID, vgName)
 	}
 	var err error
 	// Create VG if vg not exist,
