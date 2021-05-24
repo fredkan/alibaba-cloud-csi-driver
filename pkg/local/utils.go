@@ -20,22 +20,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	units "github.com/docker/go-units"
+	snapshotapi "github.com/kubernetes-csi/external-snapshotter/client/v3/apis/volumesnapshot/v1beta1"
+	snapshot "github.com/kubernetes-csi/external-snapshotter/client/v3/clientset/versioned"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/server"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"io/ioutil"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"net"
-	"net/http"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 const (
@@ -45,6 +50,18 @@ const (
 	InstanceID = "instance-id"
 	// RegionIDTag is the region id tag
 	RegionIDTag = "region-id"
+
+	AnnoSnapshotInitialSize  = "yoda.io/snapshot-initial-size"
+	AnnoSnapshotThreshold    = "yoda.io/threshold"
+	AnnoSnapshotIncreaseSize = "yoda.io/increase"
+	EnvYodaSnapshotPrefix    = "YODA_SNAPSHOT_PREFIX"
+	DefaultSnapshotPrefix    = "yoda"
+	DefaultSnapshotSize      = 4 * 1024 * 1024 * 1024
+	DefaultSnapshotThreshold = 0.5
+	DefaultIncreaseSize      = 1 * 1024 * 1024 * 1024
+	// SnapshotTag default snapshot
+	SnapshotTag         = "SnapshotName"
+	SnapshotReadonlyTag = "yoda.io/readonly"
 )
 
 // ErrParse is an error that is returned when parse operation fails
@@ -258,6 +275,80 @@ func getPvSpec(client kubernetes.Interface, volumeID, driverName string) (string
 
 	log.Infof("Get Lvm Spec for volume %s, with VgName %s, Node %s", volumeID, pv.Spec.CSI.VolumeAttributes["vgName"], nodes[0])
 	return nodes[0], vgName, pv, nil
+}
+
+func getVolumes(client kubernetes.Interface) (*v1.PersistentVolumeList, error) {
+	return client.CoreV1().PersistentVolumes().List(context.Background(), metav1.ListOptions{})
+}
+func snapshotUsedByPV(client kubernetes.Interface, snapshotContentName string) (bool, error) {
+	// Step 1: get yoda snapshot prefix
+	prefix := os.Getenv(EnvYodaSnapshotPrefix)
+	if prefix == "" {
+		prefix = DefaultSnapshotPrefix
+	}
+	// Step 2: check
+	volumes, err := getVolumes(client)
+	if err != nil {
+		return false, err
+	}
+	for _, volume := range volumes.Items {
+		if volume.Spec.CSI != nil {
+			attributes := volume.Spec.CSI.VolumeAttributes
+			if value, exist := attributes[SnapshotTag]; exist && value == snapshotContentName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+func getVolumeSnapshotClass(snapclient snapshot.Interface, className string) (*snapshotapi.VolumeSnapshotClass, error) {
+	return snapclient.SnapshotV1beta1().VolumeSnapshotClasses().Get(context.Background(), className, metav1.GetOptions{})
+}
+func getVolumeSnapshotContent(snapclient snapshot.Interface, snapshotContentName string) (*snapshotapi.VolumeSnapshotContent, error) {
+	// Step 1: get yoda snapshot prefix
+	prefix := os.Getenv(EnvYodaSnapshotPrefix)
+	if prefix == "" {
+		prefix = DefaultSnapshotPrefix
+	}
+	// Step 2: get snapshot content api
+	return snapclient.SnapshotV1beta1().VolumeSnapshotContents().Get(context.TODO(), strings.Replace(snapshotContentName, prefix, "snapcontent", 1), metav1.GetOptions{})
+}
+func getVolumeSnapshot(snapclient snapshot.Interface, snapshotName string, snapshotNamespace string) (*snapshotapi.VolumeSnapshot, error) {
+	return snapclient.SnapshotV1beta1().VolumeSnapshots(snapshotNamespace).Get(context.TODO(), snapshotName, metav1.GetOptions{})
+}
+
+func getSnapshotInitialInfo(anno map[string]string) (initialSize uint64, threshold float64, increaseSize uint64, err error) {
+	initialSize = DefaultSnapshotSize
+	threshold = DefaultSnapshotThreshold
+	increaseSize = DefaultIncreaseSize
+	err = nil
+	// Step 1: get snapshot initial size
+	if str, exist := anno[AnnoSnapshotInitialSize]; exist {
+		size, err := units.RAMInBytes(str)
+		if err != nil {
+			return 0, 0, 0, status.Errorf(codes.Internal, "getSnapshotInitialInfo: get initialSize from snapshot annotation failed: %s", err.Error())
+		}
+		initialSize = uint64(size)
+	}
+	// Step 2: get snapshot expand threshold
+	if str, exist := anno[AnnoSnapshotThreshold]; exist {
+		str = strings.ReplaceAll(str, "%", "")
+		thr, err := strconv.ParseFloat(str, 64)
+		if err != nil {
+			return 0, 0, 0, status.Errorf(codes.Internal, "getSnapshotInitialInfo: parse float failed: %s", err.Error())
+		}
+		threshold = thr / 100
+	}
+	// Step 3: get snapshot increase size
+	if str, exist := anno[AnnoSnapshotIncreaseSize]; exist {
+		size, err := units.RAMInBytes(str)
+		if err != nil {
+			return 0, 0, 0, status.Errorf(codes.Internal, "getSnapshotInitialInfo: get increase size from snapshot annotation failed: %s", err.Error())
+		}
+		increaseSize = uint64(size)
+	}
+	log.Infof("getSnapshotInitialInfo: initialSize(%d), threshold(%f), increaseSize(%d)", initialSize, threshold, increaseSize)
+	return
 }
 
 func getNodeAddr(client kubernetes.Interface, node string) (string, error) {

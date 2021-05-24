@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/lib"
-	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/manager"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/lib"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/manager"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -36,6 +37,8 @@ type Connection interface {
 	GetLvm(ctx context.Context, volGroup string, volumeID string) (string, error)
 	CreateLvm(ctx context.Context, opt *LVMOptions) (string, error)
 	DeleteLvm(ctx context.Context, volGroup string, volumeID string) error
+	CreateSnapshot(ctx context.Context, volGroup string, snapVolumeID string, volumeID string, size uint64) (string, error)
+	DeleteSnapshot(ctx context.Context, volGroup string, snapVolumeID string) error
 	CleanPath(ctx context.Context, path string) error
 	Close() error
 	GetNameSpace(ctx context.Context, regionName string, volumeID string) (string, error)
@@ -137,6 +140,23 @@ func (c *workerConnection) CreateLvm(ctx context.Context, opt *LVMOptions) (stri
 	return rsp.GetCommandOutput(), nil
 }
 
+func (c *workerConnection) CreateSnapshot(ctx context.Context, volGroup string, snapVolumeID string, volumeID string, size uint64) (string, error) {
+	client := lib.NewLVMClient(c.conn)
+	req := lib.CreateSnapshotRequest{
+		VolumeGroup: volGroup,
+		SnapName:    snapVolumeID,
+		LvName:      volumeID,
+		Size:        size,
+	}
+	rsp, err := client.CreateSnapshot(ctx, &req)
+	if err != nil {
+		log.Errorf("Create Lvm Snapshot with error: %s", err.Error())
+		return "", err
+	}
+	log.Infof("Create Lvm Snapshot with result: %+v", rsp.CommandOutput)
+	return rsp.GetCommandOutput(), nil
+}
+
 func (c *workerConnection) CreateNameSpace(ctx context.Context, opt *NameSpaceOptions) (*manager.PmemNameSpace, error) {
 	client := lib.NewLVMClient(c.conn)
 	req := lib.CreateNamespaceRequest{
@@ -209,6 +229,21 @@ func (c *workerConnection) DeleteLvm(ctx context.Context, volGroup, volumeID str
 		return err
 	}
 	log.Infof("Remove Lvm with result: %v", response.GetCommandOutput())
+	return err
+}
+
+func (c *workerConnection) DeleteSnapshot(ctx context.Context, volGroup string, snapVolumeID string) error {
+	client := lib.NewLVMClient(c.conn)
+	req := lib.RemoveSnapshotRequest{
+		VolumeGroup: volGroup,
+		SnapName:    snapVolumeID,
+	}
+	response, err := client.RemoveSnapshot(ctx, &req)
+	if err != nil {
+		log.Errorf("Remove Lvm Snapshot with error: %v", err.Error())
+		return err
+	}
+	log.Infof("Remove Lvm Snapshot with result: %v", response.GetCommandOutput())
 	return err
 }
 

@@ -180,6 +180,35 @@ func ListVG() ([]*lib.VG, error) {
 	return vgs, nil
 }
 
+// CreateSnapshot creates a new volume snapshot
+func CreateSnapshot(ctx context.Context, vg string, snapshotName string, originLVName string, size uint64) (string, error) {
+	if size == 0 {
+		return "", errors.New("size must be greater than 0")
+	}
+	args := []string{NsenterCmd, "lvcreate", "-s", "-n", snapshotName, "-L", fmt.Sprintf("%db", size), fmt.Sprintf("%s/%s", vg, originLVName), "-y"}
+	cmd := strings.Join(args, " ")
+	out, err := utils.Run(cmd)
+	return string(out), err
+}
+
+// RemoveSnapshot removes a volume snapshot
+func RemoveSnapshot(ctx context.Context, vg string, name string) (string, error) {
+	lvs, err := ListLV(fmt.Sprintf("%s/%s", vg, name))
+	if err != nil {
+		return "", fmt.Errorf("failed to list LVs: %v", err)
+	}
+	if len(lvs) == 0 {
+		return "lvm " + vg + "/" + name + " is not exist, skip remove", nil
+	}
+	if len(lvs) != 1 {
+		return "", fmt.Errorf("expected 1 LV, got %d", len(lvs))
+	}
+	args := []string{NsenterCmd, "lvremove", "-v", "-f", fmt.Sprintf("%s/%s", vg, name)}
+	cmd := strings.Join(args, " ")
+	out, err := utils.Run(cmd)
+	return string(out), err
+}
+
 // CreateVG create volume group
 func CreateVG(ctx context.Context, name string, physicalVolume string, tags []string) (string, error) {
 	args := []string{NsenterCmd, "vgcreate", name, physicalVolume, "-v"}

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package proto;
+option go_package = "github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/lib";
 
 message LogicalVolume {
   string name = 1;
@@ -153,6 +154,23 @@ message CloneLVReply {
   string command_output = 1;
 }
 
+message CreateSnapshotRequest {
+  string volume_group = 1;
+  string snap_name = 2;
+  string lv_name = 3;
+  uint64 size = 4;
+}
+message CreateSnapshotReply {
+  string command_output = 1;
+}
+message RemoveSnapshotRequest {
+  string volume_group = 1;
+  string snap_name = 2;
+}
+message RemoveSnapshotReply {
+  string command_output = 1;
+}
+
 message ListVGRequest {}
 message ListVGReply {
   repeated VolumeGroup volume_groups = 1;
@@ -253,6 +271,9 @@ service LVM {
 
   rpc AddTagLV(AddTagLVRequest) returns (AddTagLVReply) {}
   rpc RemoveTagLV(RemoveTagLVRequest) returns (RemoveTagLVReply) {}
+
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotReply) {}
+  rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotReply) {}
 
   rpc ListVG(ListVGRequest) returns (ListVGReply) {}
   rpc CreateVG(CreateVGRequest) returns (CreateVGReply) {}

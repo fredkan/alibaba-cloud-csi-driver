@@ -25,7 +25,9 @@ import (
 )
 
 // Server lvm grpc server
-type Server struct{}
+type Server struct {
+	lib.UnimplementedLVMServer
+}
 
 // NewServer new server
 func NewServer() Server {
@@ -106,6 +108,28 @@ func (s Server) ListVG(ctx context.Context, in *lib.ListVGRequest) (*lib.ListVGR
 	}
 	log.Infof("List VG with result: %+v", pbvgs)
 	return &lib.ListVGReply{VolumeGroups: pbvgs}, nil
+}
+
+// CreateSnapshot create lvm snapshot
+func (s Server) CreateSnapshot(ctx context.Context, in *lib.CreateSnapshotRequest) (*lib.CreateSnapshotReply, error) {
+	log.Infof("Create LVM Snapshot with: %+v", in)
+	out, err := CreateSnapshot(ctx, in.VolumeGroup, in.SnapName, in.LvName, in.Size)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "CreateSnapshot: create snapshot with error: %s", err.Error())
+	}
+	log.Infof("Create LVM Snapshot Successful with result: %+v", out)
+	return &lib.CreateSnapshotReply{CommandOutput: out}, nil
+}
+
+// RemoveSnapshot remove lvm snapshot
+func (s Server) RemoveSnapshot(ctx context.Context, in *lib.RemoveSnapshotRequest) (*lib.RemoveSnapshotReply, error) {
+	log.Infof("Remove LVM Snapshot with: %+v", in)
+	out, err := RemoveSnapshot(ctx, in.VolumeGroup, in.SnapName)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "RemoveSnapshot: remove snapshot with error: %s", err.Error())
+	}
+	log.Infof("Remove LVM Snapshot Successful with result: %+v", out)
+	return &lib.RemoveSnapshotReply{CommandOutput: out}, nil
 }
 
 // CreateVG create volume group

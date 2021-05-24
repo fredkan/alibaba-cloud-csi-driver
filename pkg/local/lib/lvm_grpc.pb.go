@@ -4,16 +4,15 @@ package lib
 
 import (
 	context "context"
-
-	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = proto.ProtoPackageIsVersion2
+// Requires gRPC-Go v1.32.0 or later.
+const _ = grpc.SupportPackageIsVersion7
 
 // LVMClient is the client API for LVM service.
 //
@@ -25,6 +24,8 @@ type LVMClient interface {
 	CloneLV(ctx context.Context, in *CloneLVRequest, opts ...grpc.CallOption) (*CloneLVReply, error)
 	AddTagLV(ctx context.Context, in *AddTagLVRequest, opts ...grpc.CallOption) (*AddTagLVReply, error)
 	RemoveTagLV(ctx context.Context, in *RemoveTagLVRequest, opts ...grpc.CallOption) (*RemoveTagLVReply, error)
+	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotReply, error)
+	RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotReply, error)
 	ListVG(ctx context.Context, in *ListVGRequest, opts ...grpc.CallOption) (*ListVGReply, error)
 	CreateVG(ctx context.Context, in *CreateVGRequest, opts ...grpc.CallOption) (*CreateVGReply, error)
 	RemoveVG(ctx context.Context, in *CreateVGRequest, opts ...grpc.CallOption) (*RemoveVGReply, error)
@@ -35,10 +36,10 @@ type LVMClient interface {
 }
 
 type lVMClient struct {
-	cc *grpc.ClientConn
+	cc grpc.ClientConnInterface
 }
 
-func NewLVMClient(cc *grpc.ClientConn) LVMClient {
+func NewLVMClient(cc grpc.ClientConnInterface) LVMClient {
 	return &lVMClient{cc}
 }
 
@@ -90,6 +91,24 @@ func (c *lVMClient) AddTagLV(ctx context.Context, in *AddTagLVRequest, opts ...g
 func (c *lVMClient) RemoveTagLV(ctx context.Context, in *RemoveTagLVRequest, opts ...grpc.CallOption) (*RemoveTagLVReply, error) {
 	out := new(RemoveTagLVReply)
 	err := c.cc.Invoke(ctx, "/proto.LVM/RemoveTagLV", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *lVMClient) CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotReply, error) {
+	out := new(CreateSnapshotReply)
+	err := c.cc.Invoke(ctx, "/proto.LVM/CreateSnapshot", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *lVMClient) RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotReply, error) {
+	out := new(RemoveSnapshotReply)
+	err := c.cc.Invoke(ctx, "/proto.LVM/RemoveSnapshot", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +188,8 @@ type LVMServer interface {
 	CloneLV(context.Context, *CloneLVRequest) (*CloneLVReply, error)
 	AddTagLV(context.Context, *AddTagLVRequest) (*AddTagLVReply, error)
 	RemoveTagLV(context.Context, *RemoveTagLVRequest) (*RemoveTagLVReply, error)
+	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotReply, error)
+	RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotReply, error)
 	ListVG(context.Context, *ListVGRequest) (*ListVGReply, error)
 	CreateVG(context.Context, *CreateVGRequest) (*CreateVGReply, error)
 	RemoveVG(context.Context, *CreateVGRequest) (*RemoveVGReply, error)
@@ -176,6 +197,7 @@ type LVMServer interface {
 	ListNamespace(context.Context, *ListNamespaceRequest) (*ListNamespaceReply, error)
 	CreateNamespace(context.Context, *CreateNamespaceRequest) (*CreateNamespaceReply, error)
 	RemoveNamespace(context.Context, *RemoveNamespaceRequest) (*RemoveNamespaceReply, error)
+	mustEmbedUnimplementedLVMServer()
 }
 
 // UnimplementedLVMServer must be embedded to have forward compatible implementations.
@@ -200,6 +222,12 @@ func (UnimplementedLVMServer) AddTagLV(context.Context, *AddTagLVRequest) (*AddT
 func (UnimplementedLVMServer) RemoveTagLV(context.Context, *RemoveTagLVRequest) (*RemoveTagLVReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveTagLV not implemented")
 }
+func (UnimplementedLVMServer) CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSnapshot not implemented")
+}
+func (UnimplementedLVMServer) RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveSnapshot not implemented")
+}
 func (UnimplementedLVMServer) ListVG(context.Context, *ListVGRequest) (*ListVGReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListVG not implemented")
 }
@@ -221,6 +249,7 @@ func (UnimplementedLVMServer) CreateNamespace(context.Context, *CreateNamespaceR
 func (UnimplementedLVMServer) RemoveNamespace(context.Context, *RemoveNamespaceRequest) (*RemoveNamespaceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveNamespace not implemented")
 }
+func (UnimplementedLVMServer) mustEmbedUnimplementedLVMServer() {}
 
 // UnsafeLVMServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to LVMServer will
@@ -229,8 +258,8 @@ type UnsafeLVMServer interface {
 	mustEmbedUnimplementedLVMServer()
 }
 
-func RegisterLVMServer(s *grpc.Server, srv LVMServer) {
-	s.RegisterService(&_LVM_serviceDesc, srv)
+func RegisterLVMServer(s grpc.ServiceRegistrar, srv LVMServer) {
+	s.RegisterService(&LVM_ServiceDesc, srv)
 }
 
 func _LVM_ListLV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -337,6 +366,42 @@ func _LVM_RemoveTagLV_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(LVMServer).RemoveTagLV(ctx, req.(*RemoveTagLVRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LVM_CreateSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LVMServer).CreateSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.LVM/CreateSnapshot",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LVMServer).CreateSnapshot(ctx, req.(*CreateSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LVM_RemoveSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LVMServer).RemoveSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.LVM/RemoveSnapshot",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LVMServer).RemoveSnapshot(ctx, req.(*RemoveSnapshotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -467,7 +532,10 @@ func _LVM_RemoveNamespace_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-var _LVM_serviceDesc = grpc.ServiceDesc{
+// LVM_ServiceDesc is the grpc.ServiceDesc for LVM service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var LVM_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.LVM",
 	HandlerType: (*LVMServer)(nil),
 	Methods: []grpc.MethodDesc{
@@ -494,6 +562,14 @@ var _LVM_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveTagLV",
 			Handler:    _LVM_RemoveTagLV_Handler,
+		},
+		{
+			MethodName: "CreateSnapshot",
+			Handler:    _LVM_CreateSnapshot_Handler,
+		},
+		{
+			MethodName: "RemoveSnapshot",
+			Handler:    _LVM_RemoveSnapshot_Handler,
 		},
 		{
 			MethodName: "ListVG",
