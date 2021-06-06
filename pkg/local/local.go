@@ -147,7 +147,7 @@ func GlobalConfigSet(region, nodeID, driverName string) {
 	types.GlobalConfigVar = types.GlobalConfig{
 		Region:        region,
 		NodeID:        nodeID,
-		Scheduler:     driverName,
+		DriverName:    driverName,
 		PmemEnable:    pmemEnable,
 		PmemType:      pmeType,
 		GrpcProvision: grpcProvision,

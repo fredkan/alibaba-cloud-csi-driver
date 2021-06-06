@@ -8,7 +8,7 @@ import (
 type GlobalConfig struct {
 	Region        string
 	NodeID        string
-	Scheduler     string
+	DriverName    string
 	PmemEnable    bool
 	PmemType      string
 	GrpcProvision bool
