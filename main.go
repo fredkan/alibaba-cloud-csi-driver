@@ -84,6 +84,8 @@ const (
 	TypePluginLOCAL = "localplugin.csi.alibabacloud.com"
 	// TypePluginYODA local type plugin
 	TypePluginYODA = "yodaplugin.csi.alibabacloud.com"
+	// TypePluginOpenLSS local type plugin
+	TypePluginOpenLSS = "openlss.csi.oecp.io"
 	// ExtenderAgent agent component
 	ExtenderAgent = "agent"
 )
@@ -162,7 +164,7 @@ func main() {
 				log.Fatalf("Csi endpoint:%s", *endpoint)
 			}
 		}
-		if driverName == TypePluginYODA {
+		if driverName == TypePluginYODA || driverName == TypePluginOpenLSS {
 			driverName = TypePluginLOCAL
 		}
 		if err := createPersistentStorage(path.Join(*rootDir, driverName, "controller")); err != nil {
