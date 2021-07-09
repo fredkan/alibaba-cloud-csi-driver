@@ -51,17 +51,17 @@ const (
 	// RegionIDTag is the region id tag
 	RegionIDTag = "region-id"
 
-	AnnoSnapshotInitialSize  = "yoda.io/snapshot-initial-size"
-	AnnoSnapshotThreshold    = "yoda.io/threshold"
-	AnnoSnapshotIncreaseSize = "yoda.io/increase"
-	EnvYodaSnapshotPrefix    = "YODA_SNAPSHOT_PREFIX"
-	DefaultSnapshotPrefix    = "yoda"
+	AnnoSnapshotInitialSize  = "storage.oecp.io/snapshot-initial-size"
+	AnnoSnapshotThreshold    = "storage.oecp.io/snapshot-threshold"
+	AnnoSnapshotIncreaseSize = "storage.oecp.io/snapshot-increase"
+	EnvSnapshotPrefix        = "OPENLSS_SNAPSHOT_PREFIX"
+	DefaultSnapshotPrefix    = "openlss"
 	DefaultSnapshotSize      = 4 * 1024 * 1024 * 1024
 	DefaultSnapshotThreshold = 0.5
 	DefaultIncreaseSize      = 1 * 1024 * 1024 * 1024
 	// SnapshotTag default snapshot
 	SnapshotTag         = "SnapshotName"
-	SnapshotReadonlyTag = "yoda.io/readonly"
+	SnapshotReadonlyTag = "storage.oecp.io/snapshot-readonly"
 )
 
 // ErrParse is an error that is returned when parse operation fails
@@ -282,7 +282,7 @@ func getVolumes(client kubernetes.Interface) (*v1.PersistentVolumeList, error) {
 }
 func snapshotUsedByPV(client kubernetes.Interface, snapshotContentName string) (bool, error) {
 	// Step 1: get yoda snapshot prefix
-	prefix := os.Getenv(EnvYodaSnapshotPrefix)
+	prefix := os.Getenv(EnvSnapshotPrefix)
 	if prefix == "" {
 		prefix = DefaultSnapshotPrefix
 	}
@@ -306,7 +306,7 @@ func getVolumeSnapshotClass(snapclient snapshot.Interface, className string) (*s
 }
 func getVolumeSnapshotContent(snapclient snapshot.Interface, snapshotContentName string) (*snapshotapi.VolumeSnapshotContent, error) {
 	// Step 1: get yoda snapshot prefix
-	prefix := os.Getenv(EnvYodaSnapshotPrefix)
+	prefix := os.Getenv(EnvSnapshotPrefix)
 	if prefix == "" {
 		prefix = DefaultSnapshotPrefix
 	}
