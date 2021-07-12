@@ -63,14 +63,14 @@ func (ns *nodeServer) mountLvm(ctx context.Context, req *csi.NodePublishVolumeRe
 	var isSnapshot bool = false
 	var isSnapshotReadOnly bool = false
 	if _, isSnapshot = req.VolumeContext[SnapshotTag]; isSnapshot {
-		if ro, exist := req.VolumeContext[SnapshotReadonlyTag]; exist && ro == "true" {
+		if ro, exist := req.VolumeContext[getDriverVendorTag(SnapshotReadonlyTagKey)]; exist && ro == "true" {
 			// if volume is ro snapshot, then mount snapshot lv
 			log.Infof("NodePublishVolume: volume %s is readonly snapshot, mount snapshot lv %s directly", volumeID, req.VolumeContext[SnapshotTag])
 			isSnapshotReadOnly = true
 			volumeID = req.VolumeContext[SnapshotTag]
 		} else {
-			log.Errorf("NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
-			return status.Errorf(codes.Unimplemented, "NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
+			log.Errorf("NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
+			return status.Errorf(codes.Unimplemented, "NodePublishVolume: support ro snapshot only, please set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
 		}
 	}
 	devicePath := filepath.Join("/dev/", vgName, volumeID)

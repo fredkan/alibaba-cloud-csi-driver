@@ -201,13 +201,13 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 				log.Errorf("get snapshot class failed: %s", err.Error())
 				return nil, status.Errorf(codes.InvalidArgument, "get snapshot class failed: %s", err.Error())
 			}
-			ro, exist := class.Parameters[SnapshotReadonlyTag]
+			ro, exist := class.Parameters[getDriverVendorTag(SnapshotReadonlyTagKey)]
 			if exist == false || ro != "true" {
-				log.Errorf("CreateVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
-				return nil, status.Errorf(codes.Unimplemented, "CreateVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
+				log.Errorf("CreateVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
+				return nil, status.Errorf(codes.Unimplemented, "CreateVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
 			}
 			// get node name and vg name from src volume
-			nodeSelected, storageSelected, _, err := getPvSpec(cs.client, srcVolumeID, cs.driverName)
+			nodeSelected, storageSelected, _, err = getPvSpec(cs.client, srcVolumeID, cs.driverName)
 			if err != nil {
 				log.Errorf("CreateVolume: get pv spec failed: %s", err.Error())
 				return nil, status.Errorf(codes.Internal, "CreateVolume: get pv spec failed: %s", err.Error())
@@ -216,7 +216,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 			parameters[NodeSchedueTag] = nodeSelected
 			paraList[VgNameTag] = storageSelected
 			paraList[SnapshotTag] = snapshotID
-			paraList[SnapshotReadonlyTag] = "true"
+			paraList[getDriverVendorTag(SnapshotReadonlyTagKey)] = "true"
 			isSnapshot = true
 			log.Infof("CreateVolume: get snapshot volume %s info: node(%s) vg(%s)", volumeID, nodeSelected, storageSelected)
 			// break switch
@@ -525,7 +525,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 			if value, exist := attributes[SnapshotTag]; exist && value != "" {
 				isSnapshot = true
 			}
-			if value, exist := attributes[SnapshotReadonlyTag]; exist && value == "true" {
+			if value, exist := attributes[getDriverVendorTag(SnapshotReadonlyTagKey)]; exist && value == "true" {
 				isSnapshotReadOnly = true
 			}
 		}
@@ -535,8 +535,8 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 				// break switch
 				break
 			} else {
-				log.Errorf("DeleteVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
-				return nil, status.Errorf(codes.Unimplemented, "DeleteVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", SnapshotReadonlyTag)
+				log.Errorf("DeleteVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
+				return nil, status.Errorf(codes.Unimplemented, "DeleteVolume: only support readonly snapshot now, you must set %s parameter in volumesnapshotclass", getDriverVendorTag(SnapshotReadonlyTagKey))
 			}
 		}
 
@@ -699,7 +699,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	log.Infof("ControllerExpandVolume::: %v", req)
 	volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
-	if types.GlobalConfigVar.Scheduler == yodaDriverName {
+	if types.GlobalConfigVar.DriverName == yodaDriverName {
 		volSizeGB := int((volSizeBytes + 1024*1024*1024 - 1) / (1024 * 1024 * 1024))
 		volumeID := req.GetVolumeId()
 		pvObj, err := getPvObj(cs.client, volumeID)

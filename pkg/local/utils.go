@@ -30,10 +30,11 @@ import (
 	"strings"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
 	snapshotapi "github.com/kubernetes-csi/external-snapshotter/client/v3/apis/volumesnapshot/v1beta1"
 	snapshot "github.com/kubernetes-csi/external-snapshotter/client/v3/clientset/versioned"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/server"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/local/types"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -51,17 +52,50 @@ const (
 	// RegionIDTag is the region id tag
 	RegionIDTag = "region-id"
 
-	AnnoSnapshotInitialSize  = "storage.oecp.io/snapshot-initial-size"
-	AnnoSnapshotThreshold    = "storage.oecp.io/snapshot-threshold"
-	AnnoSnapshotIncreaseSize = "storage.oecp.io/snapshot-increase"
-	EnvSnapshotPrefix        = "OPENLSS_SNAPSHOT_PREFIX"
-	DefaultSnapshotPrefix    = "openlss"
-	DefaultSnapshotSize      = 4 * 1024 * 1024 * 1024
+	// AnnoSnapshotInitialSizeKey tag
+	AnnoSnapshotInitialSizeKey = "AnnoSnapshotInitialSize"
+	// LocalAnnoSnapshotInitialSize tag
+	LocalAnnoSnapshotInitialSize = "lvm.csi.alibabacloud.com/snapshot-initial-size"
+	// OpenLSSAnnoSnapshotInitialSize tag
+	OpenLSSAnnoSnapshotInitialSize = "storage.oecp.io/snapshot-initial-size"
+	// AnnoSnapshotThresholdKey tag
+	AnnoSnapshotThresholdKey = "AnnoSnapshotThreshold"
+	// LocalAnnoSnapshotThreshold tag
+	LocalAnnoSnapshotThreshold = "lvm.csi.alibabacloud.com/threshold"
+	// OpenLSSAnnoSnapshotThreshold tag
+	OpenLSSAnnoSnapshotThreshold = "storage.oecp.io/snapshot-threshold"
+	// AnnoSnapshotIncreaseSizeKey tag
+	AnnoSnapshotIncreaseSizeKey = "AnnoSnapshotIncreaseSize"
+	// LocalAnnoSnapshotIncreaseSize tag
+	LocalAnnoSnapshotIncreaseSize = "lvm.csi.alibabacloud.com/increase"
+	// OpenLSSAnnoSnapshotIncreaseSize tag
+	OpenLSSAnnoSnapshotIncreaseSize = "storage.oecp.io/snapshot-increase"
+	// EnvSnapshotPrefixKey tag
+	EnvSnapshotPrefixKey = "EnvSnapshotPrefix"
+	// LocalEnvSnapshotPrefix tag
+	LocalEnvSnapshotPrefix = "LOCAL_SNAPSHOT_PREFIX"
+	// OpenLSSEnvSnapshotPrefix tag
+	OpenLSSEnvSnapshotPrefix = "YODA_SNAPSHOT_PREFIX"
+	// DefaultSnapshotPrefixKey tag
+	DefaultSnapshotPrefixKey = "DefaultSnapshotPrefix"
+	// LocalDefaultSnapshotPrefix tag
+	LocalDefaultSnapshotPrefix = "local"
+	// OpenLSSDefaultSnapshotPrefix tag
+	OpenLSSDefaultSnapshotPrefix = "openlss"
+	// SnapshotReadonlyTagKey tag
+	SnapshotReadonlyTagKey = "SnapshotReadonlyTag"
+	// LocalaSnapshotReadonlyTag tag
+	LocalaSnapshotReadonlyTag = "lvm.csi.alibabacloud.com/readonly"
+	// OpenLSSSnapshotReadonlyTag tag
+	OpenLSSSnapshotReadonlyTag = "storage.oecp.io/snapshot-readonly"
+	// DefaultSnapshotSize tag
+	DefaultSnapshotSize = 4 * 1024 * 1024 * 1024
+	// DefaultSnapshotThreshold tag
 	DefaultSnapshotThreshold = 0.5
-	DefaultIncreaseSize      = 1 * 1024 * 1024 * 1024
+	// DefaultIncreaseSize tag
+	DefaultIncreaseSize = 1 * 1024 * 1024 * 1024
 	// SnapshotTag default snapshot
-	SnapshotTag         = "SnapshotName"
-	SnapshotReadonlyTag = "storage.oecp.io/snapshot-readonly"
+	SnapshotTag = "SnapshotName"
 )
 
 // ErrParse is an error that is returned when parse operation fails
@@ -280,12 +314,44 @@ func getPvSpec(client kubernetes.Interface, volumeID, driverName string) (string
 func getVolumes(client kubernetes.Interface) (*v1.PersistentVolumeList, error) {
 	return client.CoreV1().PersistentVolumes().List(context.Background(), metav1.ListOptions{})
 }
-func snapshotUsedByPV(client kubernetes.Interface, snapshotContentName string) (bool, error) {
-	// Step 1: get yoda snapshot prefix
-	prefix := os.Getenv(EnvSnapshotPrefix)
-	if prefix == "" {
-		prefix = DefaultSnapshotPrefix
+
+func getDriverVendorTag(tagKey string) string {
+	if types.GlobalConfigVar.DriverName == yodaDriverName {
+		switch tagKey {
+		case AnnoSnapshotInitialSizeKey:
+			return OpenLSSAnnoSnapshotInitialSize
+		case AnnoSnapshotThresholdKey:
+			return OpenLSSAnnoSnapshotThreshold
+		case AnnoSnapshotIncreaseSizeKey:
+			return OpenLSSAnnoSnapshotIncreaseSize
+		case EnvSnapshotPrefixKey:
+			return OpenLSSEnvSnapshotPrefix
+		case DefaultSnapshotPrefixKey:
+			return OpenLSSDefaultSnapshotPrefix
+		case SnapshotReadonlyTagKey:
+			return OpenLSSSnapshotReadonlyTag
+		}
+		return ""
 	}
+
+	switch tagKey {
+	case AnnoSnapshotInitialSizeKey:
+		return LocalAnnoSnapshotInitialSize
+	case AnnoSnapshotThresholdKey:
+		return LocalAnnoSnapshotThreshold
+	case AnnoSnapshotIncreaseSizeKey:
+		return LocalAnnoSnapshotIncreaseSize
+	case EnvSnapshotPrefixKey:
+		return LocalEnvSnapshotPrefix
+	case DefaultSnapshotPrefixKey:
+		return LocalDefaultSnapshotPrefix
+	case SnapshotReadonlyTagKey:
+		return LocalaSnapshotReadonlyTag
+	}
+	return ""
+}
+
+func snapshotUsedByPV(client kubernetes.Interface, snapshotContentName string) (bool, error) {
 	// Step 2: check
 	volumes, err := getVolumes(client)
 	if err != nil {
@@ -306,9 +372,9 @@ func getVolumeSnapshotClass(snapclient snapshot.Interface, className string) (*s
 }
 func getVolumeSnapshotContent(snapclient snapshot.Interface, snapshotContentName string) (*snapshotapi.VolumeSnapshotContent, error) {
 	// Step 1: get yoda snapshot prefix
-	prefix := os.Getenv(EnvSnapshotPrefix)
+	prefix := os.Getenv(getDriverVendorTag(EnvSnapshotPrefixKey))
 	if prefix == "" {
-		prefix = DefaultSnapshotPrefix
+		prefix = getDriverVendorTag(DefaultSnapshotPrefixKey)
 	}
 	// Step 2: get snapshot content api
 	return snapclient.SnapshotV1beta1().VolumeSnapshotContents().Get(context.TODO(), strings.Replace(snapshotContentName, prefix, "snapcontent", 1), metav1.GetOptions{})
@@ -322,8 +388,9 @@ func getSnapshotInitialInfo(anno map[string]string) (initialSize uint64, thresho
 	threshold = DefaultSnapshotThreshold
 	increaseSize = DefaultIncreaseSize
 	err = nil
+
 	// Step 1: get snapshot initial size
-	if str, exist := anno[AnnoSnapshotInitialSize]; exist {
+	if str, exist := anno[getDriverVendorTag(AnnoSnapshotInitialSizeKey)]; exist {
 		size, err := units.RAMInBytes(str)
 		if err != nil {
 			return 0, 0, 0, status.Errorf(codes.Internal, "getSnapshotInitialInfo: get initialSize from snapshot annotation failed: %s", err.Error())
@@ -331,7 +398,7 @@ func getSnapshotInitialInfo(anno map[string]string) (initialSize uint64, thresho
 		initialSize = uint64(size)
 	}
 	// Step 2: get snapshot expand threshold
-	if str, exist := anno[AnnoSnapshotThreshold]; exist {
+	if str, exist := anno[getDriverVendorTag(AnnoSnapshotThresholdKey)]; exist {
 		str = strings.ReplaceAll(str, "%", "")
 		thr, err := strconv.ParseFloat(str, 64)
 		if err != nil {
@@ -340,7 +407,7 @@ func getSnapshotInitialInfo(anno map[string]string) (initialSize uint64, thresho
 		threshold = thr / 100
 	}
 	// Step 3: get snapshot increase size
-	if str, exist := anno[AnnoSnapshotIncreaseSize]; exist {
+	if str, exist := anno[getDriverVendorTag(AnnoSnapshotIncreaseSizeKey)]; exist {
 		size, err := units.RAMInBytes(str)
 		if err != nil {
 			return 0, 0, 0, status.Errorf(codes.Internal, "getSnapshotInitialInfo: get increase size from snapshot annotation failed: %s", err.Error())
