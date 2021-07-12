@@ -39,7 +39,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -56,38 +56,38 @@ const (
 	AnnoSnapshotInitialSizeKey = "AnnoSnapshotInitialSize"
 	// LocalAnnoSnapshotInitialSize tag
 	LocalAnnoSnapshotInitialSize = "lvm.csi.alibabacloud.com/snapshot-initial-size"
-	// YodaAnnoSnapshotInitialSize tag
-	YodaAnnoSnapshotInitialSize = "yoda.io/snapshot-initial-size"
+	// OpenLSSAnnoSnapshotInitialSize tag
+	OpenLSSAnnoSnapshotInitialSize = "storage.oecp.io/snapshot-initial-size"
 	// AnnoSnapshotThresholdKey tag
 	AnnoSnapshotThresholdKey = "AnnoSnapshotThreshold"
 	// LocalAnnoSnapshotThreshold tag
 	LocalAnnoSnapshotThreshold = "lvm.csi.alibabacloud.com/threshold"
-	// YodaAnnoSnapshotThreshold tag
-	YodaAnnoSnapshotThreshold = "yoda.io/threshold"
+	// OpenLSSAnnoSnapshotThreshold tag
+	OpenLSSAnnoSnapshotThreshold = "storage.oecp.io/snapshot-threshold"
 	// AnnoSnapshotIncreaseSizeKey tag
 	AnnoSnapshotIncreaseSizeKey = "AnnoSnapshotIncreaseSize"
 	// LocalAnnoSnapshotIncreaseSize tag
 	LocalAnnoSnapshotIncreaseSize = "lvm.csi.alibabacloud.com/increase"
-	// YodaAnnoSnapshotIncreaseSize tag
-	YodaAnnoSnapshotIncreaseSize = "yoda.io/increase"
+	// OpenLSSAnnoSnapshotIncreaseSize tag
+	OpenLSSAnnoSnapshotIncreaseSize = "storage.oecp.io/snapshot-increase"
 	// EnvSnapshotPrefixKey tag
 	EnvSnapshotPrefixKey = "EnvSnapshotPrefix"
 	// LocalEnvSnapshotPrefix tag
 	LocalEnvSnapshotPrefix = "LOCAL_SNAPSHOT_PREFIX"
-	// YodaEnvSnapshotPrefix tag
-	YodaEnvSnapshotPrefix = "YODA_SNAPSHOT_PREFIX"
+	// OpenLSSEnvSnapshotPrefix tag
+	OpenLSSEnvSnapshotPrefix = "YODA_SNAPSHOT_PREFIX"
 	// DefaultSnapshotPrefixKey tag
 	DefaultSnapshotPrefixKey = "DefaultSnapshotPrefix"
 	// LocalDefaultSnapshotPrefix tag
 	LocalDefaultSnapshotPrefix = "local"
-	// YodaDefaultSnapshotPrefix tag
-	YodaDefaultSnapshotPrefix = "yoda"
+	// OpenLSSDefaultSnapshotPrefix tag
+	OpenLSSDefaultSnapshotPrefix = "openlss"
 	// SnapshotReadonlyTagKey tag
 	SnapshotReadonlyTagKey = "SnapshotReadonlyTag"
 	// LocalaSnapshotReadonlyTag tag
 	LocalaSnapshotReadonlyTag = "lvm.csi.alibabacloud.com/readonly"
-	// YodaSnapshotReadonlyTag tag
-	YodaSnapshotReadonlyTag = "yoda.io/readonly"
+	// OpenLSSSnapshotReadonlyTag tag
+	OpenLSSSnapshotReadonlyTag = "storage.oecp.io/snapshot-readonly"
 	// DefaultSnapshotSize tag
 	DefaultSnapshotSize = 4 * 1024 * 1024 * 1024
 	// DefaultSnapshotThreshold tag
@@ -319,17 +319,17 @@ func getDriverVendorTag(tagKey string) string {
 	if types.GlobalConfigVar.DriverName == yodaDriverName {
 		switch tagKey {
 		case AnnoSnapshotInitialSizeKey:
-			return YodaAnnoSnapshotInitialSize
+			return OpenLSSAnnoSnapshotInitialSize
 		case AnnoSnapshotThresholdKey:
-			return YodaAnnoSnapshotThreshold
+			return OpenLSSAnnoSnapshotThreshold
 		case AnnoSnapshotIncreaseSizeKey:
-			return YodaAnnoSnapshotIncreaseSize
+			return OpenLSSAnnoSnapshotIncreaseSize
 		case EnvSnapshotPrefixKey:
-			return YodaEnvSnapshotPrefix
+			return OpenLSSEnvSnapshotPrefix
 		case DefaultSnapshotPrefixKey:
-			return YodaDefaultSnapshotPrefix
+			return OpenLSSDefaultSnapshotPrefix
 		case SnapshotReadonlyTagKey:
-			return YodaSnapshotReadonlyTag
+			return OpenLSSSnapshotReadonlyTag
 		}
 		return ""
 	}

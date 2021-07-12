@@ -1,11 +1,12 @@
 package om
 
 import (
-	log "github.com/sirupsen/logrus"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -65,7 +66,7 @@ func CheckMessageFileIssue() {
 
 			}
 			// Fix Orphaned Pod Issue
-		} else if GlobalConfigVar.IssueOrphanedPod && strings.Contains(line, "rphaned pod") && strings.Contains(line, "found, but volume paths are still present on disk") {
+		} else if GlobalConfigVar.IssueOrphanedPod && strings.Contains(line, "rphaned pod") && (strings.Contains(line, "found, but volume paths are still present on disk") || strings.Contains(line, "found, but volumes are not cleaned up")) {
 			if FixOrphanedPodIssue(line) {
 
 			}
